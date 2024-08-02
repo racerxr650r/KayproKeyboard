@@ -1,2 +1,2 @@
 # KayproKeyboard
-Serial keyboard driver for the Kaypro keyboard
+Linux serial keyboard driver for the Kaypro keyboard
