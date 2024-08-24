@@ -1,32 +1,27 @@
 #include <linux/uinput.h>
+#include <stdio.h>
+#include <string.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <unistd.h>
 
-void emit(int fd, int type, int code, int val)
-{
-   struct input_event ie;
+// Local function prototypes **************************************************
+static void emit(int fd, int type, int code, int val);
 
-   ie.type = type;
-   ie.code = code;
-   ie.value = val;
-   /* timestamp values below are ignored */
-   ie.time.tv_sec = 0;
-   ie.time.tv_usec = 0;
-
-   write(fd, &ie, sizeof(ie));
-}
-
+// Main ***********************************************************************
 int main(void)
 {
    struct uinput_setup usetup;
 
    int fd = open("/dev/uinput", O_WRONLY | O_NONBLOCK);
 
-
    /*
     * The ioctls below will enable the device that is about to be
     * created, to pass key events, in this case the space key.
     */
    ioctl(fd, UI_SET_EVBIT, EV_KEY);
-   ioctl(fd, UI_SET_KEYBIT, KEY_SPACE);
+   ioctl(fd, UI_SET_KEYBIT, KEY_MUTE);
 
    memset(&usetup, 0, sizeof(usetup));
    usetup.id.bustype = BUS_USB;
@@ -47,9 +42,9 @@ int main(void)
    sleep(1);
 
    /* Key press, report the event, send key release, and report again */
-   emit(fd, EV_KEY, KEY_SPACE, 1);
+   emit(fd, EV_KEY, KEY_MUTE, 1);
    emit(fd, EV_SYN, SYN_REPORT, 0);
-   emit(fd, EV_KEY, KEY_SPACE, 0);
+   emit(fd, EV_KEY, KEY_MUTE, 0);
    emit(fd, EV_SYN, SYN_REPORT, 0);
 
    /*
@@ -63,3 +58,19 @@ int main(void)
 
    return 0;
 }
+
+// Local Functions ************************************************************
+static void emit(int fd, int type, int code, int val)
+{
+   struct input_event ie;
+
+   ie.type = type;
+   ie.code = code;
+   ie.value = val;
+   /* timestamp values below are ignored */
+   ie.time.tv_sec = 0;
+   ie.time.tv_usec = 0;
+
+   write(fd, &ie, sizeof(ie));
+}
+

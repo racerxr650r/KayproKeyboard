@@ -19,7 +19,7 @@ BUILD_DIR = ./build/
 # C compiler command
 CC =		cc
 # Build flags for c files
-CFLAGS =	-O -I/usr/local/include -ansi -pedantic -U__STRICT_ANSI__ -Wall -Wpointer-arith -Wshadow -Wcast-qual -Wcast-align -Wstrict-prototypes -Wmissing-prototypes -Wmissing-declarations -Wredundant-decls -Wno-long-long
+CFLAGS =	-O -I/usr/local/include -pedantic -Wall -Wpointer-arith -Wshadow -Wcast-qual -Wcast-align -Wstrict-prototypes -Wmissing-prototypes -Wmissing-declarations -Wredundant-decls -Wno-long-long
 #LDFLAGS =	-s -L/usr/local/lib
 #LIBS =		-lxml2
 
