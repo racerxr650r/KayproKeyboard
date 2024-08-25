@@ -8,10 +8,16 @@
 #include <fcntl.h>
 #include <unistd.h>
 
+// Macros *********************************************************************
+// I've never liked how the static keyword is overloaded in C
+// These macros make it more intuitive
+#define local      static
+#define persistent static
+
 // Local function prototypes **************************************************
-static void emit(int fd, int type, int code, int val);
-static void displayUsage(int exitCode);
-static char* getConfigFile(void);
+local void emit(int fd, int type, int code, int val);
+local void displayUsage(int exitCode);
+local char* getConfigFile(void);
 
 // Main ***********************************************************************
 int main(int argc, char *argv[])
@@ -126,7 +132,7 @@ int main(int argc, char *argv[])
 /*
  * Emit an event to the uinput virtual device 
  */
-static void emit(int fd, int type, int code, int val)
+local void emit(int fd, int type, int code, int val)
 {
    struct input_event ie;
 
@@ -143,7 +149,7 @@ static void emit(int fd, int type, int code, int val)
 /*
  * Display the application usage w/command line options and exit w/error
  */
-static void displayUsage(int exitCode)
+local void displayUsage(int exitCode)
 {
    printf("Usage: kaykey [OPTION]... [configuration profile]\n\n\r"
           "Kaykey is a user mode Kaypro keyboard driver for Linux. It utilizes the uinput\n\r"
@@ -164,12 +170,12 @@ static void displayUsage(int exitCode)
 /*
  * Check for the default configuration files in predetermined order and the name of the appropriate one
  */
-static char* getConfigFile(void)
+local char* getConfigFile(void)
 {
-   char              *ret = NULL;
-   int               fd;
-   static char *localConf = ".kaykey";
-   static char *userConf = "~/.config/kaykey/kaykey.conf"; 
+   char *ret = NULL;
+   int  fd;
+   persistent char *localConf = ".kaykey.conf";
+   persistent char *userConf  = "~/.config/kaykey/kaykey.conf"; 
 
    // If the .kaykey file does not exist...
    if((fd=open(localConf,O_RDONLY))==-1)
@@ -178,7 +184,7 @@ static char* getConfigFile(void)
       if((fd=open(userConf,O_RDONLY))==-1)
       {
          printf("Error: Unable to open the %s or the %s\n\r"
-                "configuration files.\n\r", localConf, userConf);
+                "       configuration files. Please provide a configuration file.\n\r", localConf, userConf);
          exit(-1);
       }
       // Else close the ~/.config/kaykey/kaykey.conf file...
