@@ -168,7 +168,8 @@ local void displayUsage(int exitCode)
 }
 
 /*
- * Check for the default configuration files in predetermined order and the name of the appropriate one
+ * Check for the default configuration files in predetermined order and return
+ * the name of the appropriate one
  */
 local char* getConfigFile(void)
 {
