@@ -7,7 +7,7 @@
 
 # Install dependancies
 sudo apt update
-sudo apt install -y wget unzip
+sudo apt install -y wget unzip meson libglib2.0-dev liblua5.2-dev
 
 # Download and extract source files
 pushd .
