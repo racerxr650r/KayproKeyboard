@@ -1,0 +1,31 @@
+.TH SERKEY 1
+.SH NAME
+serkey \- User mode serial keyboard driver
+.SH SYNOPSIS
+.B serkey
+[\fBOPTION\fR]...
+<tty-device>
+.SH DESCRIPTION
+.B serkey
+is a user mode serial keyboard driver that supports the Kaypro keyboard and other custom key mappings.
+
+It utilizes the \fIuinput\fR kernel module and \fItio\fR serial I/O device tool application to implement a user mode driver for a serial keyboard. This has only been tested on Raspberry PI OS.
+.SH OPTIONS
+.TP
+.BR \-b ", " \-\-baud " " <\fIbps\fR>
+Set the baud rate in bits per second (bps) (default:300)
+.TP
+.BR \-p ", " \-\-parity " " \fIodd|even|none|mark|space\fR
+Set the parity  (default:none)
+.TP
+.BR \-d ", " \-\-data_bits " " \fI5|6|7|8|9\fR
+Set the number of data bits (default:8)
+.TP
+.BR \-s ", " \-\-stop_bits " " \fI1|2\fR
+Set the number of stop bits (default:1)
+.TP
+.BR \-k ", " \-\-key_map " " \fIkaypro|media_keys|ascii\fR
+Select the key mapping (default:kaypro)
+.TP
+.BR \-h ", " \-\-help
+Display the usage and description of the options

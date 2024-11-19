@@ -1,15 +1,15 @@
-# kaykey application Makefile
+# serkey application Makefile
 
 # Makefile Targets
 #     all:     compiles the source code
 #   clean:     removes all .hex, .elf, and .o files in the source code and 
 #              library directories
-# install:     installs the kaykey application/documentation and sets up the 
+# install:     installs the serkey application/documentation and sets up the 
 #              Raspberry PI configuration files to load it at boot
 
 # Build Variables +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 # Project name
-PRJ = kaykey
+PRJ = serkey
 # Linux usr binaries directory
 BINDIR =	/usr/local/bin
 # Linux manual directory for the man command
@@ -34,10 +34,10 @@ $(PRJ):		$(PRJ).c
 	$(CC) $(CFLAGS) $(PRJ).c -o $(BUILD_DIR)$(PRJ)
 # Install the application
 install:	all
-	rm -f $(BINDIR)/xml2c
-	cp xml2c $(BINDIR)
-	rm -f $(MANDIR)/xml2c.1
-	cp xml2c.1 $(MANDIR)
+	rm -f $(BINDIR)/$(PRJ)
+	cp $(PRJ) $(BINDIR)
+	rm -f $(MANDIR)/$(PRJ).1
+	cp $(PRJ).1 $(MANDIR)
 # Clean up all generated files
 clean:
 	rm -rf $(BUILD_DIR)
