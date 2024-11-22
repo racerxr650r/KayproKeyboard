@@ -53,7 +53,7 @@ typedef enum
 
 typedef struct
 {
-    int key;
+    char key;
     bool control,shift,makebreak;
 }keymap_t;
 
@@ -70,10 +70,12 @@ keymap_t keymap[3][256];  // Scroll to the bottom of the file for definition
 // Local function prototypes **************************************************
 local void parseCommandLine(int argc, char *argv[], config_t *config);
 local void emit(int fd, int type, int code, int val);
+local void emitKey(int fd, keymap_t *key);
 local void displayUsage(FILE *ouput);
 local void exitApp(char* error_str, bool display_usage, int return_code);
 local void launchTio(config_t *config);
 local int connectTio(config_t *config);
+local int connectUinput(char *dev_name);
 
 // Main ***********************************************************************
 int main(int argc, char *argv[])
@@ -92,9 +94,11 @@ int main(int argc, char *argv[])
 
    // Launch the serial I/O application
    launchTio(&config);
-   sleep(1);
-   // Conn;ect to the serial I/O application using a Unix domain socket
+   // Connect to the serial I/O application using a Unix domain socket
    int tio_socket = connectTio(&config);
+
+   // Connect to the uinput kernel module
+   int uinput_fd = connectUinput("/dev/uinput");
 
    // If successfully opened a pipe to tio app...
    if(tio_socket)
@@ -108,12 +112,17 @@ int main(int argc, char *argv[])
       {
          count = read(tio_socket, &key, sizeof(key));
 
+         // If read a key from tio...
          if(count!=0)
          {
+            // Display it to stdout
+            //fprintf(output," Key: %c Value: %x\n", (char)key, key);
             fputc((int)key,stdout);
             fflush(stdout);
+
+            // Send the mapped key code to uinput
+            emitKey(uinput_fd, &keymap[config.keymap][key]);
          }
-            //fprintf(output," Key: %c Value: %x\n", (char)key, key);
          else
          {
             if(errno!=0)
@@ -129,58 +138,13 @@ int main(int argc, char *argv[])
       exitApp(strerror(errno), false, -1);
 
    /*
-    * uinput setup and open a pipe to uinput
-    */
-   struct uinput_setup usetup;
-   int fd = open("/dev/uinput", O_WRONLY | O_NONBLOCK);
-
-   // If unable to open a pipe to uinput...
-   if(!fd)
-   {
-      exitApp("Error: Unable to open pipe to uinput. Make sure you have permission to access\n\r"
-              "       uinput virtual device. Try \"sudo kaykey\" to run at root level\n\r"
-              "       permissions", false, -1);
-   }
-
-   /*
-    * The ioctls below will enable the device that is about to be
-    * created, to pass key events, in this case the space key.
-    */
-   ioctl(fd, UI_SET_EVBIT, EV_KEY);
-   ioctl(fd, UI_SET_KEYBIT, KEY_MUTE);
-
-   memset(&usetup, 0, sizeof(usetup));
-   usetup.id.bustype = BUS_USB;
-   usetup.id.vendor = 0x1234; /* sample vendor */
-   usetup.id.product = 0x5678; /* sample product */
-   strcpy(usetup.name, "Example device");
-
-   ioctl(fd, UI_DEV_SETUP, &usetup);
-   ioctl(fd, UI_DEV_CREATE);
-
-   /*
-    * On UI_DEV_CREATE the kernel will create the device node for this
-    * device. We are inserting a pause here so that userspace has time
-    * to detect, initialize the new device, and can start listening to
-    * the event, otherwise it will not notice the event we are about
-    * to send. This pause is only needed in our example code!
-    */
-   sleep(1);
-
-   /* Key press, report the event, send key release, and report again */
-   emit(fd, EV_KEY, KEY_MUTE, 1);
-   emit(fd, EV_SYN, SYN_REPORT, 0);
-   emit(fd, EV_KEY, KEY_MUTE, 0);
-   emit(fd, EV_SYN, SYN_REPORT, 0);
-
-   /*
     * Give userspace some time to read the events before we destroy the
     * device with UI_DEV_DESTOY.
     */
    sleep(1);
 
-   ioctl(fd, UI_DEV_DESTROY);
-   close(fd);
+   ioctl(uinput_fd, UI_DEV_DESTROY);
+   close(uinput_fd);
 
    return 0;
 }
@@ -289,11 +253,62 @@ local void emit(int fd, int type, int code, int val)
    ie.type = type;
    ie.code = code;
    ie.value = val;
-   /* timestamp values below are ignored */
+   // timestamp values below are ignored
    ie.time.tv_sec = 0;
    ie.time.tv_usec = 0;
 
    write(fd, &ie, sizeof(ie));
+}
+
+local void emitKey(int fd, keymap_t *key)
+{
+   // If control key required...
+   if(key->control)
+   {
+      // Control key make, report the event
+      emit(fd, EV_KEY, KEY_LEFTCTRL, 1);
+      emit(fd, EV_SYN, SYN_REPORT, 0);
+   }
+   // If shift key required...
+   if(key->shift)
+   {
+      // Shift key make, report the event
+      emit(fd, EV_KEY, KEY_LEFTSHIFT, 1);
+      emit(fd, EV_SYN, SYN_REPORT, 0);
+   }
+
+   // If make/break required...
+   if(key->makebreak)
+   {
+      // Key make, report the event
+      emit(fd, EV_KEY, key->key, 1);
+      emit(fd, EV_SYN, SYN_REPORT, 0);
+      // Key break, report the event
+      emit(fd, EV_KEY, key->key, 1);
+      emit(fd, EV_SYN, SYN_REPORT, 0);
+   }
+   // Else just make or break according the MSB...
+   else
+   {
+      // Key make or break, report the event
+      emit(fd, EV_KEY, key->key && 0x7f, (key->key && 0x80) >> 7);
+      emit(fd, EV_SYN, SYN_REPORT, 0);
+   }
+
+   // If control key required...
+   if(key->control)
+   {
+      // Control key break, report the event
+      emit(fd, EV_KEY, KEY_LEFTCTRL, 0);
+      emit(fd, EV_SYN, SYN_REPORT, 0);
+   }
+   // If shift key required...
+   if(key->shift)
+   {
+      // Shift key break, report the event
+      emit(fd, EV_KEY, KEY_LEFTSHIFT, 0);
+      emit(fd, EV_SYN, SYN_REPORT, 0);
+   }
 }
 
 /*
@@ -369,6 +384,9 @@ local void launchTio(config_t *config)
       if(execl("/usr/local/bin/tio","/usr/local/bin/tio","-b",config->baudrate,"-p",config->parity,"-d",config->databits,"-s",config->stopbits,"--mute","--socket",socket_path,config->tty,NULL) == -1)
          exitApp("Unable to launch tio", false, -1);
    }
+
+   // Wait a second for the new instance of tio to start up
+   sleep(1);
 }
 
 /*
@@ -396,6 +414,53 @@ local int connectTio(config_t *config)
       exitApp(strerror(errno), false, -1);
 
    return(tio_socket);
+}
+
+/*
+ * Connect to the uinput kernel module
+ */
+local int connectUinput(char *dev_name)
+{
+   /*
+    * uinput setup and open a pipe to uinput
+    */
+   struct uinput_setup usetup;
+   int fd = open(dev_name, O_WRONLY | O_NONBLOCK);
+
+   // If unable to open a pipe to uinput...
+   if(!fd)
+   {
+      exitApp("Error: Unable to open pipe to uinput. Make sure you have permission to access\n\r"
+              "       uinput virtual device. Try \"sudo kaykey\" to run at root level\n\r"
+              "       permissions", false, -1);
+   }
+
+   /*
+    * The ioctls below will enable the device that is about to be
+    * created, to pass key events, in this case the space key.
+    */
+   ioctl(fd, UI_SET_EVBIT, EV_KEY);
+   ioctl(fd, UI_SET_KEYBIT, KEY_MUTE);
+
+   memset(&usetup, 0, sizeof(usetup));
+   usetup.id.bustype = BUS_USB;
+   usetup.id.vendor = 0x1234; /* sample vendor */
+   usetup.id.product = 0x5678; /* sample product */
+   strcpy(usetup.name, "Example device");
+
+   ioctl(fd, UI_DEV_SETUP, &usetup);
+   ioctl(fd, UI_DEV_CREATE);
+
+   /*
+    * On UI_DEV_CREATE the kernel will create the device node for this
+    * device. We are inserting a pause here so that userspace has time
+    * to detect, initialize the new device, and can start listening to
+    * the event, otherwise it will not notice the event we are about
+    * to send. This pause is only needed in our example code!
+    */
+   sleep(1);
+
+   return(fd);
 }
 
 // Key Maps *******************************************************************
