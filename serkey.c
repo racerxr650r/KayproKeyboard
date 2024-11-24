@@ -65,7 +65,7 @@ typedef struct CONFIG
 }config_t;
 
 // Globals ********************************************************************
-keymap_t keymap[3][256];  // Scroll to the bottom of the file for definition
+local keymap_t keymap[3][256];  // Scroll to the bottom of the file for definition
 
 // Local function prototypes **************************************************
 local void parseCommandLine(int argc, char *argv[], config_t *config);
@@ -77,7 +77,9 @@ local void launchTio(config_t *config);
 local int connectTio(config_t *config);
 local int connectUinput(char *dev_name);
 
-// Main ***********************************************************************
+/*
+ * Main Entry Point ***********************************************************
+ */
 int main(int argc, char *argv[])
 {
    // Default configuration
@@ -106,8 +108,6 @@ int main(int argc, char *argv[])
       unsigned char  key;
       size_t         count;
 
-      printf("Opened tio socket\r\n");
-
       do
       {
          count = read(tio_socket, &key, sizeof(key));
@@ -116,8 +116,7 @@ int main(int argc, char *argv[])
          if(count!=0)
          {
             // Display it to stdout
-            //fprintf(output," Key: %c Value: %x\n", (char)key, key);
-            fputc((int)key,stdout);
+            fprintf(stdout," Key: %c Value: %03d\n\r", (char)key, key);
             fflush(stdout);
 
             // Send the mapped key code to uinput
@@ -260,6 +259,9 @@ local void emit(int fd, int type, int code, int val)
    write(fd, &ie, sizeof(ie));
 }
 
+/*
+ * Emit a key press to uinput
+ */
 local void emitKey(int fd, keymap_t *key)
 {
    // If control key required...
@@ -284,7 +286,7 @@ local void emitKey(int fd, keymap_t *key)
       emit(fd, EV_KEY, key->key, 1);
       emit(fd, EV_SYN, SYN_REPORT, 0);
       // Key break, report the event
-      emit(fd, EV_KEY, key->key, 1);
+      emit(fd, EV_KEY, key->key, 0);
       emit(fd, EV_SYN, SYN_REPORT, 0);
    }
    // Else just make or break according the MSB...
@@ -387,6 +389,8 @@ local void launchTio(config_t *config)
 
    // Wait a second for the new instance of tio to start up
    sleep(1);
+
+   printf("Launched tio\r\n");
 }
 
 /*
@@ -413,6 +417,8 @@ local int connectTio(config_t *config)
    if(connect(tio_socket, (const struct sockaddr *)&addr, sizeof(addr)) == -1)
       exitApp(strerror(errno), false, -1);
 
+   printf("Connected to tio\r\n");
+
    return(tio_socket);
 }
 
@@ -428,11 +434,11 @@ local int connectUinput(char *dev_name)
    int fd = open(dev_name, O_WRONLY | O_NONBLOCK);
 
    // If unable to open a pipe to uinput...
-   if(!fd)
+   if(fd == -1)
    {
-      exitApp("Error: Unable to open pipe to uinput. Make sure you have permission to access\n\r"
-              "       uinput virtual device. Try \"sudo kaykey\" to run at root level\n\r"
-              "       permissions", false, -1);
+      exitApp("Unable to open pipe to uinput. Make sure you have permission to access\n\r"
+              "uinput virtual device. Try \"sudo serkey\" to run at root level permissions\n\r"
+              , false, -1);
    }
 
    /*
@@ -460,11 +466,13 @@ local int connectUinput(char *dev_name)
     */
    sleep(1);
 
+   printf("Connected to uintput\n\r");
+
    return(fd);
 }
 
 // Key Maps *******************************************************************
-keymap_t keymap[3][256] =
+local keymap_t keymap[3][256] =
 {
     {   // Kaypro key map--------------------------------------------------------------------------------------------------------------------------------------
         { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = true },   // 0	NULL(Null character)			
