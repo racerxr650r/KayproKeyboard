@@ -29,16 +29,23 @@
 #include <sys/stat.h>
 #include <sys/socket.h>
 #include <sys/un.h>
+#include <sys/wait.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <errno.h>
 #include <stdbool.h>
+#include <signal.h>
 
 // Macros *********************************************************************
 // I've never liked how the static keyword is overloaded in C
 // These macros make it more intuitive
-#define local      static
-#define persistent static
+#define local        static
+#define persistent   static
+
+#define LOG(fmt_str,...)	do{\
+   if(config.log) \
+	   fprintf(stdout,fmt_str, ##__VA_ARGS__); \
+}while(0)
 
 // Constants ******************************************************************
 #define MAX_SOCKET_PATH    1024
@@ -62,45 +69,55 @@ typedef struct CONFIG
    char *baudrate, *parity, *databits, *stopbits;
    keymaps_t keymap;
    char *socket_path,*tty;
+   bool fork, log;
 }config_t;
 
 // Globals ********************************************************************
+pid_t tioPID = 0;
+
 local keymap_t keymap[3][256];  // Scroll to the bottom of the file for definition
 
+// Default configuration
+config_t config = {  .baudrate = "300",
+                     .parity = "none",
+                     .databits = "8",
+                     .stopbits = "1",
+                     .keymap = KAYPRO,
+                     .socket_path = "/tmp/tio-kyb",
+                     .tty = NULL,
+                     .fork = false,
+                     .log = false};
+
 // Local function prototypes **************************************************
-local void parseCommandLine(int argc, char *argv[], config_t *config);
+local void parseCommandLine(int argc, char *argv[]);
 local void emit(int fd, int type, int code, int val);
 local void emitKey(int fd, keymap_t *key);
 local void displayUsage(FILE *ouput);
 local void exitApp(char* error_str, bool display_usage, int return_code);
-local void launchTio(config_t *config);
-local int connectTio(config_t *config);
-local int connectUinput(char *dev_name);
+local void launchTio(void);
+local int connectTio(void);
+local int connectUinput(void);
 
 /*
  * Main Entry Point ***********************************************************
  */
 int main(int argc, char *argv[])
 {
-   // Default configuration
-   config_t config = {  .baudrate = "300",
-                        .parity = "none",
-                        .databits = "8",
-                        .stopbits = "1",
-                        .keymap = KAYPRO,
-                        .socket_path = "/tmp/tio-kyb",
-                        .tty = NULL};
-
    // Parse the command line and setup the config
-   parseCommandLine(argc, argv, &config);
+   parseCommandLine(argc, argv);
+
+   // If enabled fork process closing the parent and returning without error
+   if(config.fork)
+      if(daemon(0,1))
+         exitApp("Daemon failed to start",false,-1);
 
    // Launch the serial I/O application
-   launchTio(&config);
+   launchTio();
    // Connect to the serial I/O application using a Unix domain socket
-   int tio_socket = connectTio(&config);
+   int tio_socket = connectTio();
 
    // Connect to the uinput kernel module
-   int uinput_fd = connectUinput("/dev/uinput");
+   int uinput_fd = connectUinput();
 
    // If successfully opened a pipe to tio app...
    if(tio_socket)
@@ -116,25 +133,28 @@ int main(int argc, char *argv[])
          if(count!=0)
          {
             // Display it to stdout
-            fprintf(stdout," Key: %c Value: %03d\n\r", (char)key, key);
-            fflush(stdout);
+            if(isprint(key))
+               LOG(" In - Key: \"%c\" code: %03d ", (char)key, key);
+            else
+               LOG(" In - Key: N/A code: %03d ", key);
 
             // Send the mapped key code to uinput
             emitKey(uinput_fd, &keymap[config.keymap][key]);
+
          }
          else
          {
             if(errno!=0)
-               exitApp("read returned an error", false, -1);
+               exitApp("read returned an error", false, -2);
             else
                exitApp("read returned zero bytes", false, 0);
          }
 
-      } while (key!=27);
+      } while(true);
       close(tio_socket);
    }
    else
-      exitApp(strerror(errno), false, -1);
+      exitApp("tio socket not returned", false, -3);
 
    /*
     * Give userspace some time to read the events before we destroy the
@@ -152,7 +172,7 @@ int main(int argc, char *argv[])
 /*
  * Parse the application command line and set up the configuration
  */
-local void parseCommandLine(int argc, char *argv[], config_t *config)
+local void parseCommandLine(int argc, char *argv[])
 {
    // For each command line argument...
    for(int i=1;i<=argc-1;++i)
@@ -169,10 +189,10 @@ local void parseCommandLine(int argc, char *argv[], config_t *config)
                baudrate = atoi(argv[++i]);
                // If the baudrate is not 0...
                if(baudrate)
-                  config->baudrate = argv[i];
+                  config.baudrate = argv[i];
                // Else error...
                else
-                  exitApp("Invalid Baudrate", true, -1);
+                  exitApp("Invalid Baudrate", true, -4);
                break;
             case 'p':
                ++i;
@@ -183,63 +203,69 @@ local void parseCommandLine(int argc, char *argv[], config_t *config)
                   !strcmp(argv[i],"mark") ||
                   !strcmp(argv[i],"space"))
                {
-                  config->parity=argv[i];
+                  config.parity=argv[i];
                }
                // Else error...
                else
-                  exitApp("Invalid parity", true, -1);
+                  exitApp("Invalid parity", true, -5);
                break;
             case 'd':
                databits = atoi(argv[++i]);
                // If valid data bits...
                if(databits >= 5 && databits <= 9)
-                  config->databits = argv[i];
+                  config.databits = argv[i];
                // Else error...
                else 
-                  exitApp("Invalid data bits", true, -1);
+                  exitApp("Invalid data bits", true, -6);
                break;
             case 's':
                stopbits = atoi(argv[++i]);
                // If valid stop bits...
                if(stopbits == 1 || stopbits == 2)
-                  config->stopbits = argv[i];
+                  config.stopbits = argv[i];
                // Else error...
                else
-                  exitApp("Invalid stop bits", true, -1);
+                  exitApp("Invalid stop bits", true, -7);
                break;
             case 'k':
                ++i;
                // If kaypro key map setting...
                if(!strcmp(argv[i],"kaypro"))
-                  config->keymap = KAYPRO;
+                  config.keymap = KAYPRO;
                // Else if media_keys key map setting...
                else if(!strcmp(argv[i],"media_keys"))
-                  config->keymap = MEDIA_KEYS;
+                  config.keymap = MEDIA_KEYS;
                // Else if ascii key map setting...
                else if(!strcmp(argv[i],"ascii"))
-                  config->keymap = ASCII;
+                  config.keymap = ASCII;
                // Else error...
                else
-                  exitApp("Invalid key map", true, -1);
+                  exitApp("Invalid key map", true, -8);
+               break;
+            case 'f':
+               config.fork = true;
+               break;
+            case 'l':
+               config.log = true;
                break;
             case 'h':
             case '?':
                exitApp(NULL, true, 0);
                break;
             default:
-               exitApp("Unknown switch", true, -1);
+               exitApp("Unknown switch", true, -9);
          }
       }
       // Else if a profile has not been provided already... 
-      else if(config->tty == NULL)
-         config->tty = argv[i];
+      else if(config.tty == NULL)
+         config.tty = argv[i];
       // Else don't know what this is...
       else
-         exitApp("Unknown parameter", true, -1);
+         exitApp("Unknown parameter", true, -10);
    }
 
-   if(config->tty==NULL)
-      exitApp("No serial device provided", true, -1);
+   if(config.tty==NULL)
+      exitApp("No serial device provided", true, -11);
 }
 
 /*
@@ -256,7 +282,10 @@ local void emit(int fd, int type, int code, int val)
    ie.time.tv_sec = 0;
    ie.time.tv_usec = 0;
 
-   write(fd, &ie, sizeof(ie));
+   int ret = write(fd, &ie, sizeof(ie));
+
+   if(ret != sizeof(ie))
+      exitApp("Failed to write to uintput\n\r", false, -12);
 }
 
 /*
@@ -264,24 +293,34 @@ local void emit(int fd, int type, int code, int val)
  */
 local void emitKey(int fd, keymap_t *key)
 {
+
+   LOG("  Out - ");
+   
    // If control key required...
    if(key->control)
    {
+      LOG("Ctrl: 1 ");
       // Control key make, report the event
       emit(fd, EV_KEY, KEY_LEFTCTRL, 1);
       emit(fd, EV_SYN, SYN_REPORT, 0);
    }
+   else
+      LOG("Ctrl: 0 ");
    // If shift key required...
    if(key->shift)
    {
+      LOG("Shift: 1 ");
       // Shift key make, report the event
       emit(fd, EV_KEY, KEY_LEFTSHIFT, 1);
       emit(fd, EV_SYN, SYN_REPORT, 0);
    }
+   else
+      LOG("Shift: 0 ");
 
    // If make/break required...
    if(key->makebreak)
    {
+      LOG("MB: 1 Key %03d\n\r",key->key);
       // Key make, report the event
       emit(fd, EV_KEY, key->key, 1);
       emit(fd, EV_SYN, SYN_REPORT, 0);
@@ -292,6 +331,7 @@ local void emitKey(int fd, keymap_t *key)
    // Else just make or break according the MSB...
    else
    {
+      LOG("MB: 0 Key %03d\n\r",key->key);
       // Key make or break, report the event
       emit(fd, EV_KEY, key->key && 0x7f, (key->key && 0x80) >> 7);
       emit(fd, EV_SYN, SYN_REPORT, 0);
@@ -318,18 +358,26 @@ local void emitKey(int fd, keymap_t *key)
  */
 local void displayUsage(FILE *output_stream)
 {
-   fprintf(output_stream, "Usage: kaykey [OPTION]... serial_device\n\n\r"
-          "Kaykey is a user mode Kaypro keyboard driver for Linux. It utilizes the uinput\n\r"
+   fprintf(output_stream, "Usage: serkey [OPTION]... serial_device\n\n\r"
+          "serkey is a user mode serial keyboard driver for Linux. It utilizes the uinput\n\r"
           "kernel module and tio serial device I/O tool. Therefore, both must be installed\n\r"
-          "and enabled. In addition, Kaykey must be run at a priviledge level capable of\n\r"
+          "and enabled. In addition, serkey must be run at a priviledge level capable of\n\r"
           "communicating with uinput. On most distributions, this is root level priviledges\n\r"
-          "by default. The serial devie specifies the \\dev tty device connected to the \n\r"
+          "by default. The serial_device specifies the \\dev tty device connected to the \n\r"
           "keyboard.\n\n\r"
           "OPTIONS:\n\r"
-          "  -f,  Provide configuration file name. ie. -f kaykey.conf\n\r"
-          "       If no configuration filename is provided, the application will first look\n\r"
-          "       for .kaykey.conf file in the current directory. If that file is not found,\n\r"
-          "       it will look for it in ~/.congfig/kaykey/kaykey.conf.\n\r"
+          "  -b   <bps>\n\r"
+          "       Set the baud rate in bits per second (bps) (default:300)\n\r"
+          "  -p   odd|even|none|mark|space\n\r"
+          "       Set the parity  (default:none)\n\r"
+          "  -d   5|6|7|8|9\n\r"
+          "       Set the number of data bits (default:8)\n\r"
+          "  -s   1|2\n\r"
+          "       Set the number of stop bits (default:1)\n\r"
+          "  -k   kaypro|media_keys|ascii\n\r"
+          "       Select the key mapping (default:kaypro)\n\r"
+          "  -f   Fork and exit the parent process\n\r"
+          "  -l   Enable informative logging to stdout\n\r"
           "  -h   Display this usage information\n\r");
 }
 
@@ -340,6 +388,16 @@ local void exitApp(char* error_str, bool display_usage, int return_code)
 {
    FILE *output;
 
+   // If tio is running as a child process...
+   if(tioPID)
+   {
+      int wstatus;
+      // Kill the tio child process
+      kill(tioPID,2);
+      // Wait until the tio process ends to prevent a zombie
+      waitpid(tioPID, &wstatus, 0);
+   }
+
    // Is the return code an error...
    if(return_code)
       output = stderr;
@@ -349,7 +407,7 @@ local void exitApp(char* error_str, bool display_usage, int return_code)
    // If an error string was provided...
    if(error_str)
       if(strlen(error_str))
-         fprintf(output, "Error: %s\n\r",error_str);
+         fprintf(output, "%s %s\n\r",return_code?"Error:":"OK:", error_str);
 
    if(display_usage == true)
       displayUsage(output);
@@ -361,7 +419,7 @@ local void exitApp(char* error_str, bool display_usage, int return_code)
 /*
  * Launch tio serial I/O tool to setup and connect to the appropriate serial port
  */
-local void launchTio(config_t *config)
+local void launchTio()
 {
    // Fork this process
    pid_t pid=fork();
@@ -372,7 +430,7 @@ local void launchTio(config_t *config)
       int fd;
       // If opening /dev/null fails...
       if ((fd = open("/dev/null", O_WRONLY)) == -1)
-         exitApp("Unable to open /dev/null",false,-1);
+         exitApp("Unable to open /dev/null",false,-13);
       // Redirect standard output to NULL
       dup2(fd, STDOUT_FILENO);
       close(fd);
@@ -380,23 +438,26 @@ local void launchTio(config_t *config)
       // Build the Socket Path string for the args
       char socket_path[MAX_SOCKET_PATH];
       strncpy(socket_path,"unix:",sizeof(socket_path) - 1);
-      strncat(socket_path,config->socket_path,sizeof(socket_path) - 1);
+      strncat(socket_path,config.socket_path,sizeof(socket_path) - 1);
 
-      // If Tio failed to launch...
-      if(execl("/usr/local/bin/tio","/usr/local/bin/tio","-b",config->baudrate,"-p",config->parity,"-d",config->databits,"-s",config->stopbits,"--mute","--socket",socket_path,config->tty,NULL) == -1)
-         exitApp("Unable to launch tio", false, -1);
+      // Launch tio
+      execl("/usr/local/bin/tio","tio","-b",config.baudrate,"-p",config.parity,"-d",config.databits,"-s",config.stopbits,"--mute","--socket",socket_path,config.tty,NULL);
+      // On return, exit
+      exitApp("Unable to launch tio", false, -14);
    }
+   else
+      tioPID = pid;
 
    // Wait a second for the new instance of tio to start up
    sleep(1);
 
-   printf("Launched tio\r\n");
+   LOG("Launched tio\r\n");
 }
 
 /*
  * Connect to the tio application using a Unix domain socket and return the socket number
  */
-local int connectTio(config_t *config)
+local int connectTio()
 {
    int tio_socket;
    struct sockaddr_un addr;
@@ -406,18 +467,18 @@ local int connectTio(config_t *config)
 
    // If creating a socket failed...
    if(tio_socket == -1)
-      exitApp("Failed to create socket",false,-1);
+      exitApp("Failed to create socket",false,-15);
 
    // Build the socket addr using the path name in config
    memset(&addr, 0, sizeof(addr));
    addr.sun_family = AF_UNIX;
-   strncpy(addr.sun_path, config->socket_path, sizeof(addr.sun_path) - 1);
+   strncpy(addr.sun_path, config.socket_path, sizeof(addr.sun_path) - 1);
 
    // If failure to connect...
    if(connect(tio_socket, (const struct sockaddr *)&addr, sizeof(addr)) == -1)
-      exitApp(strerror(errno), false, -1);
+      exitApp("Unable to connect to tio socket", false, -16);
 
-   printf("Connected to tio\r\n");
+   LOG("Connected to tio\r\n");
 
    return(tio_socket);
 }
@@ -425,34 +486,38 @@ local int connectTio(config_t *config)
 /*
  * Connect to the uinput kernel module
  */
-local int connectUinput(char *dev_name)
+local int connectUinput()
 {
    /*
     * uinput setup and open a pipe to uinput
     */
    struct uinput_setup usetup;
-   int fd = open(dev_name, O_WRONLY | O_NONBLOCK);
+   int fd = open("/dev/uinput", O_WRONLY | O_NONBLOCK);
 
    // If unable to open a pipe to uinput...
    if(fd == -1)
    {
       exitApp("Unable to open pipe to uinput. Make sure you have permission to access\n\r"
               "uinput virtual device. Try \"sudo serkey\" to run at root level permissions\n\r"
-              , false, -1);
+              , false, -17);
    }
 
    /*
     * The ioctls below will enable the device that is about to be
-    * created, to pass key events, in this case the space key.
+    * created. This includes "registering" all the possible key events
     */
    ioctl(fd, UI_SET_EVBIT, EV_KEY);
-   ioctl(fd, UI_SET_KEYBIT, KEY_MUTE);
+   for(int i=0;i<256;++i)
+   {
+      if(keymap[config.keymap][i].key != KEY_RESERVED)
+         ioctl(fd, UI_SET_KEYBIT, keymap[config.keymap][i].key);
+   }
 
    memset(&usetup, 0, sizeof(usetup));
    usetup.id.bustype = BUS_USB;
    usetup.id.vendor = 0x1234; /* sample vendor */
    usetup.id.product = 0x5678; /* sample product */
-   strcpy(usetup.name, "Example device");
+   strncpy(usetup.name, "serkey", sizeof(usetup.name));
 
    ioctl(fd, UI_DEV_SETUP, &usetup);
    ioctl(fd, UI_DEV_CREATE);
@@ -466,7 +531,13 @@ local int connectUinput(char *dev_name)
     */
    sleep(1);
 
-   printf("Connected to uintput\n\r");
+      /* Key press, report the event, send key release, and report again */
+   emit(fd, EV_KEY, KEY_KPASTERISK, 1);
+   emit(fd, EV_SYN, SYN_REPORT, 0);
+   emit(fd, EV_KEY, KEY_KPASTERISK, 0);
+   emit(fd, EV_SYN, SYN_REPORT, 0);
+
+   LOG("Connected to uintput\n\r");
 
    return(fd);
 }
@@ -483,12 +554,12 @@ local keymap_t keymap[3][256] =
         { .key = KEY_E, .control = true, .shift = false, .makebreak = true },           // 5	ENQ	(Enquiry)			
         { .key = KEY_F, .control = true, .shift = false, .makebreak = true },           // 6	ACK	(Acknowledgement)			
         { .key = KEY_G, .control = true, .shift = false, .makebreak = true },           // 7	BEL	(Bell)			
-        { .key = KEY_H, .control = true, .shift = false, .makebreak = true },           // 8	BS	(Backspace)			
-        { .key = KEY_I, .control = true, .shift = false, .makebreak = true },           // 9	HT	(Horizontal Tab)			
-        { .key = KEY_J, .control = true, .shift = false, .makebreak = true },           // 10	LF	(Line feed)			
+        { .key = KEY_BACKSPACE, .control = false, .shift = false, .makebreak = true },  // 8	BS	(Backspace)			
+        { .key = KEY_TAB, .control = false, .shift = false, .makebreak = true },        // 9	HT	(Horizontal Tab)			
+        { .key = KEY_LINEFEED, .control = false, .shift = false, .makebreak = true },   // 10	LF	(Line feed)			
         { .key = KEY_K, .control = true, .shift = false, .makebreak = true },           // 11	VT	(Vertical Tab)			
         { .key = KEY_L, .control = true, .shift = false, .makebreak = true },           // 12	FF	(Form feed)			
-        { .key = KEY_M, .control = true, .shift = false, .makebreak = true },           // 13	CR	(Carriage return)			
+        { .key = KEY_ENTER, .control = false, .shift = false, .makebreak = true },      // 13	CR	(Carriage return)			
         { .key = KEY_N, .control = true, .shift = false, .makebreak = true },           // 14	SO	(Shift Out)			
         { .key = KEY_O, .control = true, .shift = false, .makebreak = true },           // 15	SI	(Shift In)			
         { .key = KEY_P, .control = true, .shift = false, .makebreak = true },           // 16	DLE	(Data link escape)			
@@ -499,10 +570,10 @@ local keymap_t keymap[3][256] =
         { .key = KEY_U, .control = true, .shift = false, .makebreak = true },           // 21	NAK	(Negative acknowledgement)			
         { .key = KEY_V, .control = true, .shift = false, .makebreak = true },           // 22	SYN	(Synchronous idle)			
         { .key = KEY_W, .control = true, .shift = false, .makebreak = true },           // 23	ETB	(End of transmission block)			
-        { .key = KEY_X, .control = true, .shift = false, .makebreak = true },           // 24	CAN	(Cancel)			
+        { .key = KEY_CANCEL, .control = false, .shift = false, .makebreak = true },     // 24	CAN	(Cancel)			
         { .key = KEY_Y, .control = true, .shift = false, .makebreak = true },           // 25	EM	(End of medium)			
         { .key = KEY_Z, .control = true, .shift = false, .makebreak = true },           // 26	SUB	(Substitute)			
-        { .key = KEY_LEFTBRACE, .control = true, .shift = false, .makebreak = true },   // 27	ESC	(Escape)			
+        { .key = KEY_ESC, .control = false, .shift = false, .makebreak = true },        // 27	ESC	(Escape)			
         { .key = KEY_BACKSLASH, .control = true, .shift = false, .makebreak = true },   // 28	FS	(File separator)			
         { .key = KEY_RIGHTBRACE, .control = true, .shift = false, .makebreak = true },  // 29	GS	(Group separator)			
         { .key = KEY_6, .control = true, .shift = true, .makebreak = true },            // 30	RS	(Record separator)			
@@ -520,7 +591,7 @@ local keymap_t keymap[3][256] =
         { .key = KEY_8, .control = false, .shift = true, .makebreak = true },           // 42	*	(Asterisk)			
         { .key = KEY_EQUAL, .control = false, .shift = true, .makebreak = true },       // 43	+	(Plus sign)			
         { .key = KEY_COMMA, .control = false, .shift = false, .makebreak = true },      // 44	,	(Comma)			
-        { .key = KEY_MINUS, .control = false, .shift = true, .makebreak = true },       // 45	-	(Hyphen)			
+        { .key = KEY_MINUS, .control = false, .shift = false, .makebreak = true },      // 45	-	(Hyphen)			
         { .key = KEY_DOT, .control = false, .shift = false, .makebreak = true },        // 46	.	(Full stop , dot)			
         { .key = KEY_SLASH, .control = false, .shift = false, .makebreak = true },      // 47	/	(Slash)			
         { .key = KEY_0, .control = false, .shift = false, .makebreak = true },          // 48	0	(number zero)			
@@ -652,8 +723,8 @@ local keymap_t keymap[3][256] =
         { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = true },   // 174	«	(Guillemets or  angle quotes)			
         { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = true },   // 175	»	(Guillemets or  angle quotes)			
         { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = true },   // 176	░				
-        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = true },   // 177	▒				
-        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = true },   // 178	▓				
+        { .key = KEY_KP0, .control = false, .shift = false, .makebreak = true },        // 177	▒				
+        { .key = KEY_KPDOT, .control = false, .shift = false, .makebreak = true },      // 178	▓				
         { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = true },   // 179	│	(Box drawing character)			
         { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = true },   // 180	┤	(Box drawing character)			
         { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = true },   // 181	Á	(Capital letter "A" with acute accent or "A-acute")			
@@ -667,10 +738,10 @@ local keymap_t keymap[3][256] =
         { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = true },   // 189	¢	(Cent symbol)			
         { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = true },   // 190	¥	(YEN and YUAN sign)			
         { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = true },   // 191	┐	(Box drawing character)			
-        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = true },   // 192	└	(Box drawing character)			
-        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = true },   // 193	┴	(Box drawing character)			
-        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = true },   // 194	┬	(Box drawing character)			
-        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = true },   // 195	├	(Box drawing character)			
+        { .key = KEY_KP1, .control = false, .shift = false, .makebreak = true },        // 192	└	(Box drawing character)			
+        { .key = KEY_KP2, .control = false, .shift = false, .makebreak = true },        // 193	┴	(Box drawing character)			
+        { .key = KEY_KP3, .control = false, .shift = false, .makebreak = true },        // 194	┬	(Box drawing character)			
+        { .key = KEY_KPENTER, .control = false, .shift = false, .makebreak = true },    // 195	├	(Box drawing character)			
         { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = true },   // 196	─	(Box drawing character)			
         { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = true },   // 197	┼	(Box drawing character)			
         { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = true },   // 198	ã	(letter "a" with tilde or "a-tilde")			
@@ -683,10 +754,10 @@ local keymap_t keymap[3][256] =
         { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = true },   // 205	═	(Box drawing character)			
         { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = true },   // 206	╬	(Box drawing character)			
         { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = true },   // 207	¤	(generic currency sign )			
-        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = true },   // 208	ð	(lowercase "eth")			
-        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = true },   // 209	Ð	(Capital letter "Eth")			
-        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = true },   // 210	Ê	(letter "E" with circumflex accent or "E-circumflex")			
-        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = true },   // 211	Ë	(letter "E" with umlaut or diaeresis ; "E-umlaut")			
+        { .key = KEY_KP4, .control = false, .shift = false, .makebreak = true },        // 208	ð	(lowercase "eth")			
+        { .key = KEY_KP5, .control = false, .shift = false, .makebreak = true },        // 209	Ð	(Capital letter "Eth")			
+        { .key = KEY_KP6, .control = false, .shift = false, .makebreak = true },        // 210	Ê	(letter "E" with circumflex accent or "E-circumflex")			
+        { .key = KEY_KPCOMMA, .control = false, .shift = false, .makebreak = true },    // 211	Ë	(letter "E" with umlaut or diaeresis ; "E-umlaut")			
         { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = true },   // 212	È	(letter "E" with grave accent)			
         { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = true },   // 213	ı	(lowercase dot less i)			
         { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = true },   // 214	Í	(Capital letter "I" with acute accent or "I-acute")			
@@ -700,10 +771,10 @@ local keymap_t keymap[3][256] =
         { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = true },   // 222	Ì	(letter "I" with grave accent)			
         { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = true },   // 223	▀				
         { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = true },   // 224	Ó	(Capital letter "O" with acute accent or "O-acute")			
-        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = true },   // 225	ß	(letter "Eszett" ; "scharfes S" or "sharp S")			
-        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = true },   // 226	Ô	(letter "O" with circumflex accent or "O-circumflex")			
-        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = true },   // 227	Ò	(letter "O" with grave accent)			
-        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = true },   // 228	õ	(letter "o" with tilde or "o-tilde")			
+        { .key = KEY_KP7, .control = false, .shift = false, .makebreak = true },        // 225	ß	(letter "Eszett" ; "scharfes S" or "sharp S")			
+        { .key = KEY_KP8, .control = false, .shift = false, .makebreak = true },        // 226	Ô	(letter "O" with circumflex accent or "O-circumflex")			
+        { .key = KEY_KP9, .control = false, .shift = false, .makebreak = true },        // 227	Ò	(letter "O" with grave accent)			
+        { .key = KEY_KPMINUS, .control = false, .shift = false, .makebreak = true },    // 228	õ	(letter "o" with tilde or "o-tilde")			
         { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = true },   // 229	Õ	(letter "O" with tilde or "O-tilde")			
         { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = true },   // 230	µ	(Lowercase letter "Mu" ; micro sign or micron)			
         { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = true },   // 231	þ	(capital letter "Thorn")			
@@ -716,10 +787,10 @@ local keymap_t keymap[3][256] =
         { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = true },   // 238	¯	(macron symbol)			
         { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = true },   // 239	´	(Acute accent)			
         { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = true },   // 240	¬	(Hyphen)			
-        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = true },   // 241	±	(Plus-minus sign)			
-        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = true },   // 242	‗	(underline or underscore)			
-        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = true },   // 243	¾	(three quarters)			
-        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = true },   // 244	¶	(paragraph sign or pilcrow)			
+        { .key = KEY_UP, .control = false, .shift = false, .makebreak = true },         // 241	±	(Plus-minus sign)			
+        { .key = KEY_DOWN, .control = false, .shift = false, .makebreak = true },       // 242	‗	(underline or underscore)			
+        { .key = KEY_LEFT, .control = false, .shift = false, .makebreak = true },       // 243	¾	(three quarters)			
+        { .key = KEY_RIGHT, .control = false, .shift = false, .makebreak = true },      // 244	¶	(paragraph sign or pilcrow)			
         { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = true },   // 245	§	(Section sign)			
         { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = true },   // 246	÷	(The division sign ; Obelus)			
         { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = true },   // 247	¸	(cedilla)			
@@ -991,20 +1062,261 @@ local keymap_t keymap[3][256] =
         { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false }    // 255	nbsp	(non-breaking space or no-break space)
     },
     { // Media Keymap -----------------------------------------------------------------------------------------------------------------------------------------
-        { .key = KEY_MUTE, .control = false, .shift = false, .makebreak = false },          // 0
-        { .key = KEY_VOLUMEUP, .control = false, .shift = false, .makebreak = false },      // 1
-        { .key = KEY_VOLUMEDOWN, .control = false, .shift = false, .makebreak = false },    // 2
-        { .key = KEY_PLAYPAUSE, .control = false, .shift = false, .makebreak = false },     // 3
-        { .key = KEY_NEXTSONG, .control = false, .shift = false, .makebreak = false },      // 4
-        { .key = KEY_PREVIOUSSONG, .control = false, .shift = false, .makebreak = false },  // 5
-        { .key = KEY_RECORD, .control = false, .shift = false, .makebreak = false },        // 6
-        { .key = KEY_REWIND, .control = false, .shift = false, .makebreak = false },        // 7
+        { .key = KEY_MUTE, .control = false, .shift = false, .makebreak = false },           // 0
+        { .key = KEY_VOLUMEUP, .control = false, .shift = false, .makebreak = false },       // 1
+        { .key = KEY_VOLUMEDOWN, .control = false, .shift = false, .makebreak = false },     // 2
+        { .key = KEY_PLAYPAUSE, .control = false, .shift = false, .makebreak = false },      // 3
+        { .key = KEY_NEXTSONG, .control = false, .shift = false, .makebreak = false },       // 4
+        { .key = KEY_PREVIOUSSONG, .control = false, .shift = false, .makebreak = false },   // 5
+        { .key = KEY_RECORD, .control = false, .shift = false, .makebreak = false },         // 6
+        { .key = KEY_REWIND, .control = false, .shift = false, .makebreak = false },         // 7
         { .key = KEY_FORWARD, .control = false, .shift = false, .makebreak = false },        // 8
-        { .key = KEY_PLAYCD, .control = false, .shift = false, .makebreak = false },        // 9
-        { .key = KEY_PAUSECD, .control = false, .shift = false, .makebreak = false },       // 10
-        { .key = KEY_STOPCD, .control = false, .shift = false, .makebreak = false },        // 11
-        { .key = KEY_EJECTCD, .control = false, .shift = false, .makebreak = false },       // 12
-        { .key = KEY_CLOSECD, .control = false, .shift = false, .makebreak = false },       // 13
-        { .key = KEY_EJECTCLOSECD, .control = false, .shift = false, .makebreak = false },  // 14
-    }
+        { .key = KEY_PLAYCD, .control = false, .shift = false, .makebreak = false },         // 9
+        { .key = KEY_PAUSECD, .control = false, .shift = false, .makebreak = false },        // 10
+        { .key = KEY_STOPCD, .control = false, .shift = false, .makebreak = false },         // 11
+        { .key = KEY_EJECTCD, .control = false, .shift = false, .makebreak = false },        // 12
+        { .key = KEY_CLOSECD, .control = false, .shift = false, .makebreak = false },        // 13
+        { .key = KEY_EJECTCLOSECD, .control = false, .shift = false, .makebreak = false },   // 14
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 15
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 16
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 17
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 18
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 19
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 20
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 21
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 22
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 23
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 24
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 25
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 26
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 27
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 28
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 29
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 30
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 31
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 32
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 33
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 34
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 35
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 36
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 37
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 38
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 39
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 40
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 41
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 42
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 43
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 44
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 45
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 46
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 47
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 48
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 49
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 50
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 51
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 52
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 53
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 54
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 55
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 56
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 57
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 58
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 59
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 60
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 61
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 62
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 63
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 64
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 65
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 66
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 67
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 68
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 69
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 70
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 71
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 72
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 73
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 74
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 75
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 76
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 77
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 78
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 79
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 80
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 81
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 82
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 83
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 84
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 85
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 86
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 87
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 88
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 89
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 90
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 91
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 92
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 93
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 94
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 95
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 96
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 97
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 98
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 99
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 100
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 101
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 102
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 103
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 104
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 105
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 106
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 107
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 108
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 109
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 110
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 111
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 112
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 113
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 114
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 115
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 116
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 117
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 118
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 119
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 120
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 121
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 122
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 123
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 124
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 125
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 126
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 127
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 128
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 129
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 130
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 131
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 132
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 133
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 134
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 135
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 136
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 137
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 138
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 139
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 140
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 141
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 142
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 143
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 144
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 145
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 146
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 147
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 148
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 149
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 150
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 151
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 152
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 153
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 154
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 155
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 156
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 157
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 158
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 159
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 160
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 161
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 162
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 163
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 164
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 165
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 166
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 167
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 168
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 169
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 170
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 171
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 172
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 173
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 174
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 175
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 176
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 177
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 178
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 179
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 180
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 181
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 182
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 183
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 184
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 185
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 186
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 187
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 188
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 189
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 190
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 191
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 192
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 193
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 194
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 195
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 196
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 197
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 198
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 199
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 200
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 201
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 202
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 203
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 204
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 205
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 206
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 207
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 208
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 209
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 210
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 211
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 212
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 213
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 214
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 215
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 216
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 217
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 218
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 219
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 220
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 221
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 222
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 223
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 224
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 225
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 226
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 227
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 228
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 229
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 230
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 231
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 232
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 233
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 234
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 235
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 236
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 237
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 238
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 239
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 240
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 241
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 242
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 243
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 244
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 245
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 246
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 247
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 248
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 249
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 250
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 251
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 252
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 253
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 254
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false }        // 255
+   }
 };

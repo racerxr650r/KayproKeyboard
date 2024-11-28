@@ -9,7 +9,7 @@ serkey \- User mode serial keyboard driver
 .B serkey
 is a user mode serial keyboard driver that supports the Kaypro keyboard and other custom key mappings.
 
-It utilizes the \fIuinput\fR kernel module and \fItio\fR serial I/O device tool application to implement a user mode driver for a serial keyboard. This has only been tested on Raspberry PI OS.
+It utilizes the \fIuinput\fR kernel module and \fItio\fR serial I/O device tool application to implement a user mode driver for a serial keyboard. Therefore, both must be installed and enabled. In addition, serkey must be run at a priviledge level capable of communicating with uinput. On most distributions, this is root level priviledges by default. The serial_device specifies the \\dev tty device connected to the keyboard. This application has only been tested on Raspberry PI OS.
 .SH OPTIONS
 .TP
 .BR \-b ", " \-\-baud " " <\fIbps\fR>
