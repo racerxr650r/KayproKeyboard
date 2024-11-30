@@ -47,27 +47,6 @@ This will launch the application with the fork/daemon option using the ttyAMA4
 serial device. Substitute the options and device you require. See the usage
 section for details about the options.
 
-## Command line usage
-```
-USAGE: serkey [OPTION]... serial_device
-
-User mode serial keyboard connected to serial device "serial_device"
-
-OPTIONS:
-  -b   <bps>
-       Set the baud rate in bits per second (bps) (default:300)
-  -p   odd|even|none
-       Set the parity  (default:none)
-  -d   5|6|7|8
-       Set the number of data bits (default:8)
-  -s   1|2
-       Set the number of stop bits (default:1)
-  -k   kaypro|media_keys|ascii
-       Select the key mapping (default:kaypro)
-  -f   Fork the process to run as a background process
-  -v   Verbose mode to display status information and keystroke codes
-  -h   Display this usage information
-```
 ## Install serkey
 
 ```console
@@ -94,6 +73,28 @@ man serkey
 ```
 
 man only works if you have installed serkey.
+
+## Command line usage
+```
+USAGE: serkey [OPTION]... serial_device
+
+User mode serial keyboard connected to serial device "serial_device"
+
+OPTIONS:
+  -b   <bps>
+       Set the baud rate in bits per second (bps) (default:300)
+  -p   odd|even|none
+       Set the parity  (default:none)
+  -d   5|6|7|8
+       Set the number of data bits (default:8)
+  -s   1|2
+       Set the number of stop bits (default:1)
+  -k   kaypro|media_keys|ascii
+       Select the key mapping (default:kaypro)
+  -f   Fork the process to run as a background process
+  -v   Verbose mode to display status information and keystroke codes
+  -h   Display this usage information
+```
 
 ## Uninstall serkey
 
