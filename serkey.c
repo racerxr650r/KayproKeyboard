@@ -31,6 +31,7 @@
 #include <sys/un.h>
 #include <sys/wait.h>
 #include <fcntl.h>
+#include <termios.h>
 #include <unistd.h>
 #include <errno.h>
 #include <stdbool.h>
@@ -43,14 +44,14 @@
 #define persistent   static
 
 #define LOG(fmt_str,...)	do{\
-   if(config.log) \
+   if(appConfig.verbose) \
 	   fprintf(stdout,fmt_str, ##__VA_ARGS__); \
 }while(0)
 
 // Constants ******************************************************************
-#define MAX_SOCKET_PATH    1024
 
 // Data Types *****************************************************************
+// Keymap
 typedef enum
 {
    KAYPRO,
@@ -64,39 +65,124 @@ typedef struct
     bool control,shift,makebreak;
 }keymap_t;
 
+// Serial Port
+typedef enum
+{
+   PARITY_NONE,
+   PARITY_EVEN,
+   PARITY_ODD
+}parity_t;
+
+typedef enum
+{
+   DATABITS_5 = CS5,
+   DATABITS_6 = CS6,
+   DATABITS_7 = CS7,
+   DATABITS_8 = CS8
+}databits_t;
+
+typedef enum
+{
+   STOPBITS_1 = 0,
+   STOPBITS_2 = CSTOPB
+}stopbits_t;
+
+typedef struct
+{
+   int      baudrate;
+   speed_t  speed;
+}baudrate_t;
+
+// Configuration
 typedef struct CONFIG
 {
-   char *baudrate, *parity, *databits, *stopbits;
-   keymaps_t keymap;
-   char *socket_path,*tty;
-   bool fork, log;
+   speed_t     speed;
+   parity_t    parity;
+   databits_t  databits;
+   stopbits_t   stopbits;
+   keymaps_t   keymap;
+   char        *tty;
+   bool        fork, verbose;
 }config_t;
 
-// Globals ********************************************************************
-pid_t tioPID = 0;
+// Globals ********************************************************
+// Serial Port 
+struct termios ttyConfig;
+int            ttyFd = 0;
+baudrate_t     speeds[] =
+{
+   {.baudrate = 50, .speed = B50},
+   {.baudrate = 110, .speed = B110},
+   {.baudrate = 300, .speed = B300},
+   {.baudrate = 1200, .speed = B1200},
+   {.baudrate = 2400, .speed = B2400},
+   {.baudrate = 4800, .speed = B4800},
+   {.baudrate = 9600, .speed = B9600},
+   {.baudrate = 19200, .speed = B19200},
+   {.baudrate = 38400, .speed = B38400},
+   {.baudrate = 57600, .speed = B57600},
+   {.baudrate = 115200, .speed = B115200},
+   {.baudrate = 230400, .speed = B230400},
+   {.baudrate = 460800, .speed = B460800},
+   {.baudrate = 921600, .speed = B921600},
+   {.baudrate = 1152000, .speed = B1152000}
+};
 
+// Keymap
 local keymap_t keymap[3][256];  // Scroll to the bottom of the file for definition
 
-// Default configuration
-config_t config = {  .baudrate = "300",
-                     .parity = "none",
-                     .databits = "8",
-                     .stopbits = "1",
-                     .keymap = KAYPRO,
-                     .socket_path = "/tmp/tio-kyb",
-                     .tty = NULL,
-                     .fork = false,
-                     .log = false};
+// Configuration w/default values
+config_t appConfig = {  .speed = B300,
+                        .parity = PARITY_NONE,
+                        .databits = DATABITS_8,
+                        .stopbits = STOPBITS_1,
+                        .keymap = KAYPRO,
+                        .tty = "/dev/ttyAMA4",
+                        .fork = false,
+                        .verbose = false};
 
 // Local function prototypes **************************************************
-local void parseCommandLine(int argc, char *argv[]);
-local void emit(int fd, int type, int code, int val);
-local void emitKey(int fd, keymap_t *key);
-local void displayUsage(FILE *ouput);
-local void exitApp(char* error_str, bool display_usage, int return_code);
-local void launchTio(void);
-local int connectTio(void);
+// Application ctrl
+local void parseCommandLine(  int argc,      // Total count of arguments
+                              char *argv[]); // Array of pointers to the argument strings
+
+local void displayUsage(FILE *ouput);        // File pointer to output the text to
+
+local void exitApp(  char* error_str,        // Descriptive char string
+                     bool display_usage,     // Display usage?
+                     int return_code);       // Return code to use for exit()
+
+// Uinput Interface
+local void emit(  int fd,              // File descriptor for Uinput
+                  int type,            // Type of code
+                  int code,            // Key code
+                  int val);            // Code modifier
+
+local void emitKey(  int fd,           // File descriptor for Uinput
+                     keymap_t *key);   // Keymap entry for the key to be passed to Uinput
+
 local int connectUinput(void);
+
+// Serial port
+local int getSerialConfig( int fd,                    // File descriptor
+                           struct termios *config);   // termios configuration
+
+local int setSerialConfig( int fd,                    // File descriptor
+                           struct termios *config);   // termios configuration
+
+local int configSerial( int         fd,               // File descriptor for /dev/tty?
+                        speed_t     speed,            // Baudrate B? [B50 to B115200]
+                        parity_t    parity,           // Parity [PARITY_NONE | PARITY_ODD | PARITY_EVEN]
+                        databits_t  dataBits,         // Number of data bits [DATABITS_5 | DATABITS_6 | DATABITS_7 | DATABITS_8]
+                        stopbits_t  stopBits);        // Number of stop bits [STOPBITS_1 | STOPBITS_2]
+
+local int openSerial(char *tty,                       // Path/Name of the tty device
+                     speed_t     speed,               // Baudrate B? [B50 to B115200]
+                     parity_t    parity,              // Parity [PARITY_NONE | PARITY_ODD | PARITY_EVEN]
+                     databits_t  dataBits,            // Number of data bits [DATABITS_5 | DATABITS_6 | DATABITS_7 | DATABITS_8]
+                     stopbits_t  stopBits);           // Number of stop bits [STOPBITS_1 | STOPBITS_2]
+
+local int closeSerial(int fd);                        // File descriptor of serial device
 
 /*
  * Main Entry Point ***********************************************************
@@ -107,68 +193,55 @@ int main(int argc, char *argv[])
    parseCommandLine(argc, argv);
 
    // If enabled fork process closing the parent and returning without error
-   if(config.fork)
+   if(appConfig.fork)
       if(daemon(0,1))
          exitApp("Daemon failed to start",false,-1);
 
-   // Launch the serial I/O application
-   launchTio();
-   // Connect to the serial I/O application using a Unix domain socket
-   int tio_socket = connectTio();
+   // Open and configure the serial port
+   int fdSerial;
+   if((fdSerial = openSerial(appConfig.tty, appConfig.speed, appConfig.parity, appConfig.databits, appConfig.stopbits))<1)
+      exitApp("Unable to open serial device",false,-1);
 
    // Connect to the uinput kernel module
    int uinput_fd = connectUinput();
 
-   // If successfully opened a pipe to tio app...
-   if(tio_socket)
+   // Loop forever reading keystrokes from the serial port and writing the 
+   // mapped key code to Uninput 
+   do
    {
       unsigned char  key;
       size_t         count;
 
-      do
+      // Read the next key from the serial port
+      // This call is blocking
+      count = read(fdSerial, &key, sizeof(key));
+
+      // If read a key from from the serial port...
+      if(count!=0)
       {
-         count = read(tio_socket, &key, sizeof(key));
-
-         // If read a key from tio...
-         if(count!=0)
-         {
-            // Display it to stdout
-            if(isprint(key))
-               LOG(" In - Key: \"%c\" code: %03d ", (char)key, key);
-            else
-               LOG(" In - Key: N/A code: %03d ", key);
-
-            // Send the mapped key code to uinput
-            emitKey(uinput_fd, &keymap[config.keymap][key]);
-
-         }
+         // Display it to stdout
+         if(isprint(key))
+            LOG(" In - Key: \"%c\" code: %03d ", (char)key, key);
          else
-         {
-            if(errno!=0)
-               exitApp("read returned an error", false, -2);
-            else
-               exitApp("read returned zero bytes", false, 0);
-         }
+            LOG(" In - Key: N/A code: %03d ", key);
 
-      } while(true);
-      close(tio_socket);
-   }
-   else
-      exitApp("tio socket not returned", false, -3);
+         // Send the mapped key code to uinput
+         emitKey(uinput_fd, &keymap[appConfig.keymap][key]);
+      }
+      else
+      {
+         if(errno!=0)
+            exitApp("read returned an error", false, -2);
+         else
+            exitApp("read returned zero bytes", false, 0);
+      }
 
-   /*
-    * Give userspace some time to read the events before we destroy the
-    * device with UI_DEV_DESTOY.
-    */
-   sleep(1);
-
-   ioctl(uinput_fd, UI_DEV_DESTROY);
-   close(uinput_fd);
+   } while(true);
 
    return 0;
 }
 
-// Local Functions ************************************************************
+// Program Runtime Functions **************************************************
 /*
  * Parse the application command line and set up the configuration
  */
@@ -188,23 +261,25 @@ local void parseCommandLine(int argc, char *argv[])
             case 'b':
                baudrate = atoi(argv[++i]);
                // If the baudrate is not 0...
-               if(baudrate)
-                  config.baudrate = argv[i];
-               // Else error...
-               else
+               for(int j=0;j<sizeof(speeds)/sizeof(baudrate_t);++j)
+                  if(speeds[j].baudrate==baudrate)
+                  {
+                     appConfig.speed = speeds[j].speed;
+                     break;
+                  }
+               // If searched to the end of the table of speeds...
+               if(i==sizeof(speeds)/sizeof(baudrate_t))
                   exitApp("Invalid Baudrate", true, -4);
                break;
             case 'p':
                ++i;
                // If valid parity setting...
-               if(!strcmp(argv[i],"odd") ||
-                  !strcmp(argv[i],"even") ||
-                  !strcmp(argv[i],"none") ||
-                  !strcmp(argv[i],"mark") ||
-                  !strcmp(argv[i],"space"))
-               {
-                  config.parity=argv[i];
-               }
+               if(!strcmp(argv[i],"odd"))
+                  appConfig.parity = PARITY_ODD;
+               else if(!strcmp(argv[i],"even"))
+                  appConfig.parity = PARITY_EVEN;
+               else if(!strcmp(argv[i],"none"))
+                  appConfig.parity=PARITY_NONE;
                // Else error...
                else
                   exitApp("Invalid parity", true, -5);
@@ -212,8 +287,14 @@ local void parseCommandLine(int argc, char *argv[])
             case 'd':
                databits = atoi(argv[++i]);
                // If valid data bits...
-               if(databits >= 5 && databits <= 9)
-                  config.databits = argv[i];
+               if(databits == 5)
+                  appConfig.databits = DATABITS_5;
+               else if(databits == 6)
+                  appConfig.databits = DATABITS_6;
+               else if(databits == 7)
+                  appConfig.databits = DATABITS_7;
+               else if(databits == 6)
+                  appConfig.databits = DATABITS_8;
                // Else error...
                else 
                   exitApp("Invalid data bits", true, -6);
@@ -221,8 +302,10 @@ local void parseCommandLine(int argc, char *argv[])
             case 's':
                stopbits = atoi(argv[++i]);
                // If valid stop bits...
-               if(stopbits == 1 || stopbits == 2)
-                  config.stopbits = argv[i];
+               if(stopbits == 1)
+                  appConfig.stopbits = STOPBITS_1;
+               else if(stopbits == 2)
+                  appConfig.stopbits = STOPBITS_2;
                // Else error...
                else
                   exitApp("Invalid stop bits", true, -7);
@@ -231,22 +314,22 @@ local void parseCommandLine(int argc, char *argv[])
                ++i;
                // If kaypro key map setting...
                if(!strcmp(argv[i],"kaypro"))
-                  config.keymap = KAYPRO;
+                  appConfig.keymap = KAYPRO;
                // Else if media_keys key map setting...
                else if(!strcmp(argv[i],"media_keys"))
-                  config.keymap = MEDIA_KEYS;
+                  appConfig.keymap = MEDIA_KEYS;
                // Else if ascii key map setting...
                else if(!strcmp(argv[i],"ascii"))
-                  config.keymap = ASCII;
+                  appConfig.keymap = ASCII;
                // Else error...
                else
                   exitApp("Invalid key map", true, -8);
                break;
             case 'f':
-               config.fork = true;
+               appConfig.fork = true;
                break;
-            case 'l':
-               config.log = true;
+            case 'v':
+               appConfig.verbose = true;
                break;
             case 'h':
             case '?':
@@ -257,17 +340,78 @@ local void parseCommandLine(int argc, char *argv[])
          }
       }
       // Else if a profile has not been provided already... 
-      else if(config.tty == NULL)
-         config.tty = argv[i];
+      else if(appConfig.tty == NULL)
+         appConfig.tty = argv[i];
       // Else don't know what this is...
       else
          exitApp("Unknown parameter", true, -10);
    }
 
-   if(config.tty==NULL)
+   if(appConfig.tty==NULL)
       exitApp("No serial device provided", true, -11);
 }
 
+/*
+ * Display the application usage w/command line options and exit w/error
+ */
+local void displayUsage(FILE *output_stream)
+{
+   fprintf(output_stream, "Usage: serkey [OPTION]... serial_device\n\n\r"
+          "serkey is a user mode serial keyboard driver for Linux. It utilizes the uinput\n\r"
+          "kernel module and tio serial device I/O tool. Therefore, both must be installed\n\r"
+          "and enabled. In addition, serkey must be run at a priviledge level capable of\n\r"
+          "communicating with uinput. On most distributions, this is root level priviledges\n\r"
+          "by default. The serial_device specifies the \\dev tty device connected to the \n\r"
+          "keyboard.\n\n\r"
+          "OPTIONS:\n\r"
+          "  -b   <bps>\n\r"
+          "       Set the baud rate in bits per second (bps) (default:300)\n\r"
+          "  -p   odd|even|none|mark|space\n\r"
+          "       Set the parity  (default:none)\n\r"
+          "  -d   5|6|7|8|9\n\r"
+          "       Set the number of data bits (default:8)\n\r"
+          "  -s   1|2\n\r"
+          "       Set the number of stop bits (default:1)\n\r"
+          "  -k   kaypro|media_keys|ascii\n\r"
+          "       Select the key mapping (default:kaypro)\n\r"
+          "  -f   Fork and exit creating daemon process\n\r"
+          "  -v   Verbose output to stdout/stderr\n\r"
+          "  -h   Display this usage information\n\r");
+}
+
+/*
+ * Display a message and exit the application with a given return code
+ */
+local void exitApp(char* error_str, bool display_usage, int return_code)
+{
+   FILE *output;
+
+   // If the serial port has already been configured...
+   if(ttyFd>0)
+      closeSerial(ttyFd);
+
+   // Is the return code an error...
+   if(return_code)
+      output = stderr;
+   else
+      output = stdout;
+
+   // If an error string was provided...
+   if(error_str)
+      if(strlen(error_str))
+         fprintf(output, "%s %s %s %s\n\r",  return_code?"Error:":"OK:", 
+                                       error_str, 
+                                       return_code?"Error -":"", 
+                                       return_code?strerror(errno):"");
+
+   if(display_usage == true)
+      displayUsage(output);
+
+   fflush(output);
+   exit(return_code);
+}
+
+// Uinput interface functions *************************************************
 /*
  * Emit an event to the uinput virtual device 
  */
@@ -354,136 +498,6 @@ local void emitKey(int fd, keymap_t *key)
 }
 
 /*
- * Display the application usage w/command line options and exit w/error
- */
-local void displayUsage(FILE *output_stream)
-{
-   fprintf(output_stream, "Usage: serkey [OPTION]... serial_device\n\n\r"
-          "serkey is a user mode serial keyboard driver for Linux. It utilizes the uinput\n\r"
-          "kernel module and tio serial device I/O tool. Therefore, both must be installed\n\r"
-          "and enabled. In addition, serkey must be run at a priviledge level capable of\n\r"
-          "communicating with uinput. On most distributions, this is root level priviledges\n\r"
-          "by default. The serial_device specifies the \\dev tty device connected to the \n\r"
-          "keyboard.\n\n\r"
-          "OPTIONS:\n\r"
-          "  -b   <bps>\n\r"
-          "       Set the baud rate in bits per second (bps) (default:300)\n\r"
-          "  -p   odd|even|none|mark|space\n\r"
-          "       Set the parity  (default:none)\n\r"
-          "  -d   5|6|7|8|9\n\r"
-          "       Set the number of data bits (default:8)\n\r"
-          "  -s   1|2\n\r"
-          "       Set the number of stop bits (default:1)\n\r"
-          "  -k   kaypro|media_keys|ascii\n\r"
-          "       Select the key mapping (default:kaypro)\n\r"
-          "  -f   Fork and exit the parent process\n\r"
-          "  -l   Enable informative logging to stdout\n\r"
-          "  -h   Display this usage information\n\r");
-}
-
-/*
- * Display a message and exit the application with a given return code
- */
-local void exitApp(char* error_str, bool display_usage, int return_code)
-{
-   FILE *output;
-
-   // If tio is running as a child process...
-   if(tioPID)
-   {
-      int wstatus;
-      // Kill the tio child process
-      kill(tioPID,2);
-      // Wait until the tio process ends to prevent a zombie
-      waitpid(tioPID, &wstatus, 0);
-   }
-
-   // Is the return code an error...
-   if(return_code)
-      output = stderr;
-   else
-      output = stdout;
-
-   // If an error string was provided...
-   if(error_str)
-      if(strlen(error_str))
-         fprintf(output, "%s %s\n\r",return_code?"Error:":"OK:", error_str);
-
-   if(display_usage == true)
-      displayUsage(output);
-
-   fflush(output);
-   exit(return_code);
-}
-
-/*
- * Launch tio serial I/O tool to setup and connect to the appropriate serial port
- */
-local void launchTio()
-{
-   // Fork this process
-   pid_t pid=fork();
-   // If this is the child process...
-   if(pid==0)
-   {
-      // Redirect stdout to /dev/null
-      int fd;
-      // If opening /dev/null fails...
-      if ((fd = open("/dev/null", O_WRONLY)) == -1)
-         exitApp("Unable to open /dev/null",false,-13);
-      // Redirect standard output to NULL
-      dup2(fd, STDOUT_FILENO);
-      close(fd);
-
-      // Build the Socket Path string for the args
-      char socket_path[MAX_SOCKET_PATH];
-      strncpy(socket_path,"unix:",sizeof(socket_path) - 1);
-      strncat(socket_path,config.socket_path,sizeof(socket_path) - 1);
-
-      // Launch tio
-      execl("/usr/local/bin/tio","tio","-b",config.baudrate,"-p",config.parity,"-d",config.databits,"-s",config.stopbits,"--mute","--socket",socket_path,config.tty,NULL);
-      // On return, exit
-      exitApp("Unable to launch tio", false, -14);
-   }
-   else
-      tioPID = pid;
-
-   // Wait a second for the new instance of tio to start up
-   sleep(1);
-
-   LOG("Launched tio\r\n");
-}
-
-/*
- * Connect to the tio application using a Unix domain socket and return the socket number
- */
-local int connectTio()
-{
-   int tio_socket;
-   struct sockaddr_un addr;
-
-   // Create the socket
-   tio_socket = socket(AF_UNIX, SOCK_STREAM, 0);
-
-   // If creating a socket failed...
-   if(tio_socket == -1)
-      exitApp("Failed to create socket",false,-15);
-
-   // Build the socket addr using the path name in config
-   memset(&addr, 0, sizeof(addr));
-   addr.sun_family = AF_UNIX;
-   strncpy(addr.sun_path, config.socket_path, sizeof(addr.sun_path) - 1);
-
-   // If failure to connect...
-   if(connect(tio_socket, (const struct sockaddr *)&addr, sizeof(addr)) == -1)
-      exitApp("Unable to connect to tio socket", false, -16);
-
-   LOG("Connected to tio\r\n");
-
-   return(tio_socket);
-}
-
-/*
  * Connect to the uinput kernel module
  */
 local int connectUinput()
@@ -509,8 +523,8 @@ local int connectUinput()
    ioctl(fd, UI_SET_EVBIT, EV_KEY);
    for(int i=0;i<256;++i)
    {
-      if(keymap[config.keymap][i].key != KEY_RESERVED)
-         ioctl(fd, UI_SET_KEYBIT, keymap[config.keymap][i].key);
+      if(keymap[appConfig.keymap][i].key != KEY_RESERVED)
+         ioctl(fd, UI_SET_KEYBIT, keymap[appConfig.keymap][i].key);
    }
 
    memset(&usetup, 0, sizeof(usetup));
@@ -540,6 +554,113 @@ local int connectUinput()
    LOG("Connected to uintput\n\r");
 
    return(fd);
+}
+
+// Serial Port Functions ******************************************************
+/*
+ * Get the current serial configuration
+ */
+local int getSerialConfig( int fd,                 // File descriptor
+                           struct termios *config) // termios configuration
+{
+   int ret = tcgetattr(fd,config);
+   return(ret);
+}
+
+/*
+ * Set the current serial configuration
+ */
+local int setSerialConfig( int fd,                 // File descriptor
+                           struct termios *config) // termios configuration
+{
+   int ret = tcsetattr(fd,TCSANOW,config);
+   return(ret);
+}
+
+/*
+ * Setup the serial port
+ */
+local int configSerial( int         fd,         // File descriptor for /dev/tty?
+                        speed_t     speed,      // Baudrate B? [B50 to B115200]
+                        parity_t    parity,     // Parity [PARITY_NONE | PARITY_ODD | PARITY_EVEN]
+                        databits_t  dataBits,   // Number of data bits [DATABITS_5 | DATABITS_6 | DATABITS_7 | DATABITS_8]
+                        stopbits_t  stopBits)   // Number of stop bits [STOPBITS_1 | STOPBITS_2]
+{
+   struct termios tty;
+
+   // Set the input and output baudrate
+   cfsetospeed(&tty, speed);
+   cfsetispeed(&tty, speed);
+
+   // Set the data bits
+   tty.c_cflag = (tty.c_cflag & ~CSIZE) | dataBits;
+
+   // disable IGNBRK for mismatched speed tests; otherwise receive break
+   // as \000 chars
+   tty.c_iflag &= ~IGNBRK; // disable break processing
+   tty.c_lflag = 0;        // no signaling chars, no echo,
+                           // no canonical processing
+   tty.c_oflag = 0;        // no remapping, no delays
+
+   // Block until 1 character read
+   tty.c_cc[VMIN]  = 1;
+   tty.c_cc[VTIME] = 0;
+
+   // Turn off xon/xoff ctrl
+   tty.c_iflag &= ~(IXON | IXOFF | IXANY);
+   // Ignore modem ctrls and enable read
+   tty.c_cflag |= (CLOCAL | CREAD);    
+   // Turn off rts/cts
+   //tty.c_cflag &= ~CRTSCTS;
+
+   // Set parity
+   tty.c_cflag &= ~(PARENB | PARODD);
+   if(parity == PARITY_ODD)
+      tty.c_cflag |= (PARENB | PARODD);
+   else if(parity == PARITY_EVEN)
+      tty.c_cflag |= PARENB;
+
+   // Set stop bits
+   tty.c_cflag &= ~CSTOPB;
+   tty.c_cflag |= (unsigned int)stopBits;
+
+   return(setSerialConfig(fd, &tty));
+}
+
+/*
+ * Open a tty serial device, save it's current config, and set the new config
+ */
+local int openSerial(char *tty,              // Path/Name of the tty device
+                     speed_t     speed,      // Baudrate B? [B50 to B115200]
+                     parity_t    parity,     // Parity [PARITY_NONE | PARITY_ODD | PARITY_EVEN]
+                     databits_t  dataBits,   // Number of data bits [DATABITS_5 | DATABITS_6 | DATABITS_7 | DATABITS_8]
+                     stopbits_t  stopBits)   // Number of stop bits [STOPBITS_1 | STOPBITS_2]
+{
+   int fd;
+
+   // Open the file descriptor
+   if((fd = open(tty, O_RDWR | O_NOCTTY))<0)
+      exitApp("Unable to open to serial device",false,-1);
+
+   // Get the current serial device configuration
+   if(getSerialConfig(fd,&ttyConfig))
+      exitApp("Unable to get the current serial device configuration",false,-1);
+
+   // Setup the new serial device configuration
+   if(configSerial(fd, speed, parity, dataBits, stopBits))
+      exitApp("Unable to set the serial device configuration",false,-1);
+
+   return(fd);
+}
+
+/*
+ * Close a tty serial device and restore it's config
+ */
+local int closeSerial(int fd)    // File descriptor of serial device
+{
+   if(setSerialConfig(ttyFd,&ttyConfig))
+      exitApp("Unable to reset the serial device configuration",false,-1);
+   return(close(fd));
 }
 
 // Key Maps *******************************************************************
