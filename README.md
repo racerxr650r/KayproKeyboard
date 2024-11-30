@@ -48,7 +48,7 @@ serial device. Substitute the options and device you require. See the usage
 section for details about the options.
 
 ## Command line usage
-
+```
 USAGE: serkey [OPTION]... serial_device
 
 User mode serial keyboard connected to serial device "serial_device"
@@ -67,7 +67,7 @@ OPTIONS:
   -f   Fork the process to run as a background process
   -v   Verbose mode to display status information and keystroke codes
   -h   Display this usage information
-
+```
 ## Install serkey
 
 ```console
