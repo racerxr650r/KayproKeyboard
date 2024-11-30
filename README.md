@@ -133,7 +133,7 @@ At the bottom of the serkey.c source file, find the keymap data structure. This
 data structure defines the uinput key mappings for each character received from
 the serial port.
 
-```code
+```C
 // Key Maps *******************************************************************
 local keymap_t keymap[3][256] =
 {
