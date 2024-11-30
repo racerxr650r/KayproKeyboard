@@ -339,12 +339,9 @@ local void parseCommandLine(int argc, char *argv[])
                exitApp("Unknown switch", true, -9);
          }
       }
-      // Else if a profile has not been provided already... 
-      else if(appConfig.tty == NULL)
-         appConfig.tty = argv[i];
-      // Else don't know what this is...
+      // Else update the device path/name 
       else
-         exitApp("Unknown parameter", true, -10);
+         appConfig.tty = argv[i];
    }
 
    if(appConfig.tty==NULL)
@@ -399,9 +396,9 @@ local void exitApp(char* error_str, bool display_usage, int return_code)
    // If an error string was provided...
    if(error_str)
       if(strlen(error_str))
-         fprintf(output, "%s %s %s %s\n\r",  return_code?"Error:":"OK:", 
+         fprintf(output, "%s %s\n\r%s %s\n\r",  return_code?"Error:":"OK:", 
                                        error_str, 
-                                       return_code?"Error -":"", 
+                                       return_code?"Error Code -":"", 
                                        return_code?strerror(errno):"");
 
    if(display_usage == true)
@@ -512,7 +509,7 @@ local int connectUinput()
    if(fd == -1)
    {
       exitApp("Unable to open pipe to uinput. Make sure you have permission to access\n\r"
-              "uinput virtual device. Try \"sudo serkey\" to run at root level permissions\n\r"
+              "uinput virtual device. Try \"sudo serkey\" to run at root level permissions"
               , false, -17);
    }
 
@@ -595,9 +592,8 @@ local int configSerial( int         fd,         // File descriptor for /dev/tty?
    // Set the data bits
    tty.c_cflag = (tty.c_cflag & ~CSIZE) | dataBits;
 
-   // disable IGNBRK for mismatched speed tests; otherwise receive break
-   // as \000 chars
-   tty.c_iflag &= ~IGNBRK; // disable break processing
+   // Disable Ignore CR and CR/NL translations
+   tty.c_iflag &= ~(INLCR | IGNCR | ICRNL); // disable break processing
    tty.c_lflag = 0;        // no signaling chars, no echo,
                            // no canonical processing
    tty.c_oflag = 0;        // no remapping, no delays

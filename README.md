@@ -1,7 +1,9 @@
 # SerKey
 Linux serial keyboard driver that supports the Kaypro keyboard and other custom key mappings
 
-Utilizes the [uinput kernel module](https://kernel.org/doc/html/v4.12/input/uinput.html) and [tio serial I/O device tool application](https://github.com/tio/tio) to implement a user mode driver for the Kaypro keyboard. This has only been tested on Raspberry PI OS.
+Utilizes the [uinput kernel module](https://kernel.org/doc/html/v4.12/input/uinput.html)
+to implement a user mode driver for the Kaypro keyboard. This has only been
+tested on Raspberry PI OS.
 
 ## Download this repository
 
@@ -18,17 +20,32 @@ cd SerKey
 make
 ```
 
+Change to the SerKey directory and build the application
+
+## Setup permissions to run from your user account
+
+```console
+make permissions
+```
+
+This will create a uinput group, add your user to it, and setup a udev rule
+to make /dev/uinput read/writeable by your user/group.
+
 ## Run the application
 
 ```console
-make run
+make run OPTIONS="-f" DEVICE="/dev/ttyAMA4"
 ```
 
 Or...
 
 ```console
-./build/serkey /dev/ttyAMA4
+./build/serkey -f /dev/ttyAMA4
 ```
+
+This will launch the application with the fork/daemon option using the ttyAMA4
+serial device. Substitute the options and device you require. See the usage
+section for details about the options.
 
 ## Command line usage
 
@@ -39,30 +56,101 @@ User mode serial keyboard connected to serial device "serial_device"
 OPTIONS:
   -b   <bps>
        Set the baud rate in bits per second (bps) (default:300)
-  -p   odd|even|none|mark|space
+  -p   odd|even|none
        Set the parity  (default:none)
-  -d   5|6|7|8|9
+  -d   5|6|7|8
        Set the number of data bits (default:8)
   -s   1|2
        Set the number of stop bits (default:1)
   -k   kaypro|media_keys|ascii
        Select the key mapping (default:kaypro)
+  -f   Fork the process to run as a background process
+  -v   Verbose mode to display status information and keystroke codes
   -h   Display this usage information
 
-## Install the application
+## Install serkey
 
 ```console
-make install OPTIONS = "-b 300 -p none -d 8 -s 1 -k kaypro" DEVICE = "/dev/ttyAMA4"
+make install OPTIONS="-b 300 -p none -d 8 -s 1 -k kaypro" DEVICE="/dev/ttyAMA4"
 ```
 
-Installing serkey using the makefile will do the following:
+Installs the serkey application and documentation.
 
-1. Build the serkey application, if it hasn't been already
-2. Copy the serkey application to $(BINDIR) directory. BINDIR defaults to "/usr/local/bin"
-3. Copy the serkey man page to the $(MANDIR) directory. MANDIR defaults to "/usr/local/man/man1"
-4. Modify the systemd service file serkey.service with the provided $(OPTIONS) and $(DEVICE)
-5. Copy the service file serkey.service to the $(SYSDDIR) directory. SYSDDIR defaults to "/etc/systemd/system"
+> :memo: **Note:** BINDIR (directory to install the binary file) and MANDIR 
+(directory to install the man page documentation) can be defined from the 
+make command line. This will replace the default values. The defaults for 
+BINDIR and MANDIR should work for most Linux distributions
 
-> :memo: **Note:** BINDIR, MANDIR, OPTIONS, DEVICE, and SYSDDIR can be defined from the make command line. This will
-replace the default value. The defaults for BINDIR, MANDIR, and SYSDDIR should work for Linux distributions that use
-the systemd init system. This includes Raspberry Pi OS, Debian, Ubuntu, MX Linux, etc.
+## Get usage information
+
+```console
+serkey -h
+```
+
+or...
+
+```console
+man serkey
+```
+
+man only works if you have installed serkey.
+
+## Uninstall serkey
+
+```console
+make uninstall
+```
+
+Uninstalls the serkey application and documentation.
+
+## Daemonize serkey
+
+```console
+make daemon OPTIONS="-b 300 -p none -d 8 -s 1 -k kaypro" DEVICE="/dev/ttyAMA4"
+```
+
+Install the serkey application and documentation and create a .service file to
+launch serkey as a daemon using systemd. This file will use the OPTIONS and
+DEVICE defined	in the makefile or the make command line
+
+> :memo: **Note:** OPTIONS, DEVICE, and SYSDDIR can be defined from the make
+command line. This will replace the default values. The default for SYSDDIR
+should work for Linux distributions that use the systemd init system. This
+includes Raspberry Pi OS, Debian, Ubuntu, MX Linux, etc.
+
+## Uninstall the serkey Daemon
+
+```console
+make undaemon
+```
+
+Uninstall the serkey application and documentation stop the serkey daemon and
+remove the .service file from the systemd configuration directory
+
+# Adding a custom key map to serkey
+
+At the bottom of the serkey.c source file, find the keymap data structure. This
+data structure defines the uinput key mappings for each character received from
+the serial port.
+
+```code
+// Key Maps *******************************************************************
+local keymap_t keymap[3][256] =
+{
+    { // Kaypro keymap ------------------------------------------------------------
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = true },   // 0	NULL(Null character)
+        ...
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = true }    // 255	nbsp	(non-breaking space or no-break space)
+    },
+    { // ASCII Keymap --------------------------------------------------------------
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },   // 0	NULL(Null character)			
+        ...
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false }    // 255	nbsp	(non-breaking space or no-break space)
+    },
+    { // Media Keymap --------------------------------------------------------------
+        { .key = KEY_MUTE, .control = false, .shift = false, .makebreak = false },           // 0
+        ...
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false }        // 255
+   }
+};
+```
