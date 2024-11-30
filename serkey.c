@@ -49,14 +49,17 @@
 }while(0)
 
 // Constants ******************************************************************
+#define KEYMAPS      4
+#define KEYS_PER_MAP 256
 
 // Data Types *****************************************************************
 // Keymap
 typedef enum
 {
-   KAYPRO,
-   ASCII,
-   MEDIA_KEYS
+   KEYMAP_KAYPRO,
+   KEYMAP_ASCII,
+   KEYMAP_MEDIA_KEYS,
+   KEYMAP_CUSTOM
 }keymaps_t;
 
 typedef struct
@@ -129,14 +132,14 @@ baudrate_t     speeds[] =
 };
 
 // Keymap
-local keymap_t keymap[3][256];  // Scroll to the bottom of the file for definition
+local keymap_t keymap[KEYMAPS][KEYS_PER_MAP];  // Scroll to the bottom of the file for definition
 
 // Configuration w/default values
 config_t appConfig = {  .speed = B300,
                         .parity = PARITY_NONE,
                         .databits = DATABITS_8,
                         .stopbits = STOPBITS_1,
-                        .keymap = KAYPRO,
+                        .keymap = KEYMAP_KAYPRO,
                         .tty = "/dev/ttyAMA4",
                         .fork = false,
                         .verbose = false};
@@ -314,13 +317,13 @@ local void parseCommandLine(int argc, char *argv[])
                ++i;
                // If kaypro key map setting...
                if(!strcmp(argv[i],"kaypro"))
-                  appConfig.keymap = KAYPRO;
+                  appConfig.keymap = KEYMAP_KAYPRO;
                // Else if media_keys key map setting...
                else if(!strcmp(argv[i],"media_keys"))
-                  appConfig.keymap = MEDIA_KEYS;
+                  appConfig.keymap = KEYMAP_MEDIA_KEYS;
                // Else if ascii key map setting...
                else if(!strcmp(argv[i],"ascii"))
-                  appConfig.keymap = ASCII;
+                  appConfig.keymap = KEYMAP_ASCII;
                // Else error...
                else
                   exitApp("Invalid key map", true, -8);
@@ -660,7 +663,7 @@ local int closeSerial(int fd)    // File descriptor of serial device
 }
 
 // Key Maps *******************************************************************
-local keymap_t keymap[3][256] =
+local keymap_t keymap[KEYMAPS][KEYS_PER_MAP] =
 {
     {   // Kaypro key map--------------------------------------------------------------------------------------------------------------------------------------
         { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = true },   // 0	NULL(Null character)			
@@ -1194,6 +1197,264 @@ local keymap_t keymap[3][256] =
         { .key = KEY_EJECTCD, .control = false, .shift = false, .makebreak = false },        // 12
         { .key = KEY_CLOSECD, .control = false, .shift = false, .makebreak = false },        // 13
         { .key = KEY_EJECTCLOSECD, .control = false, .shift = false, .makebreak = false },   // 14
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 15
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 16
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 17
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 18
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 19
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 20
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 21
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 22
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 23
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 24
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 25
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 26
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 27
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 28
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 29
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 30
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 31
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 32
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 33
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 34
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 35
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 36
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 37
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 38
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 39
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 40
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 41
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 42
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 43
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 44
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 45
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 46
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 47
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 48
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 49
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 50
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 51
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 52
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 53
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 54
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 55
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 56
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 57
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 58
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 59
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 60
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 61
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 62
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 63
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 64
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 65
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 66
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 67
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 68
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 69
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 70
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 71
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 72
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 73
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 74
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 75
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 76
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 77
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 78
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 79
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 80
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 81
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 82
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 83
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 84
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 85
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 86
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 87
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 88
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 89
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 90
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 91
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 92
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 93
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 94
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 95
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 96
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 97
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 98
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 99
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 100
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 101
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 102
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 103
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 104
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 105
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 106
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 107
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 108
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 109
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 110
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 111
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 112
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 113
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 114
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 115
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 116
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 117
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 118
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 119
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 120
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 121
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 122
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 123
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 124
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 125
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 126
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 127
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 128
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 129
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 130
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 131
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 132
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 133
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 134
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 135
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 136
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 137
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 138
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 139
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 140
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 141
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 142
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 143
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 144
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 145
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 146
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 147
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 148
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 149
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 150
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 151
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 152
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 153
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 154
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 155
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 156
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 157
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 158
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 159
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 160
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 161
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 162
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 163
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 164
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 165
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 166
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 167
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 168
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 169
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 170
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 171
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 172
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 173
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 174
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 175
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 176
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 177
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 178
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 179
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 180
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 181
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 182
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 183
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 184
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 185
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 186
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 187
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 188
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 189
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 190
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 191
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 192
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 193
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 194
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 195
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 196
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 197
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 198
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 199
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 200
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 201
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 202
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 203
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 204
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 205
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 206
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 207
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 208
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 209
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 210
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 211
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 212
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 213
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 214
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 215
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 216
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 217
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 218
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 219
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 220
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 221
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 222
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 223
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 224
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 225
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 226
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 227
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 228
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 229
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 230
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 231
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 232
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 233
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 234
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 235
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 236
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 237
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 238
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 239
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 240
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 241
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 242
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 243
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 244
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 245
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 246
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 247
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 248
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 249
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 250
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 251
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 252
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 253
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 254
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false }        // 255
+   },
+    { // Custom Keymap ---------------------------------------------------------------------------------------------------------------------------------------
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 0
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 1
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 2
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 3
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 4
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 5
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 6
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 7
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 8
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 9
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 10
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 11
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 12
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 13
+        { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 14
         { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 15
         { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 16
         { .key = KEY_RESERVED, .control = false, .shift = false, .makebreak = false },       // 17
