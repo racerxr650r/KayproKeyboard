@@ -68,7 +68,7 @@ unpermission:
 	sudo rm -f /etc/udev/rules.d/uinput.rules
 	sudo udevadm control --reload-rules
 # Setup daemon launched by systemd
-daemon:
+daemon: install
 	cp serkey.service.src $(PRJ).service
 	echo ExecStart=$(BINDIR)/serkey $(OPTIONS) $(DEVICE) | tee -a $(PRJ).service
 	sudo mv $(PRJ).service $(SYSDDIR)

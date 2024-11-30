@@ -197,16 +197,21 @@ int main(int argc, char *argv[])
 
    // If enabled fork process closing the parent and returning without error
    if(appConfig.fork)
+   {
       if(daemon(0,1))
          exitApp("Daemon failed to start",false,-1);
+      LOG("Forked daemon\n\r");
+   }
 
    // Open and configure the serial port
    int fdSerial;
    if((fdSerial = openSerial(appConfig.tty, appConfig.speed, appConfig.parity, appConfig.databits, appConfig.stopbits))<1)
       exitApp("Unable to open serial device",false,-1);
+   LOG("Opened and configured serial device\n\r");
 
    // Connect to the uinput kernel module
    int uinput_fd = connectUinput();
+   LOG("Connected to uintput\n\r");
 
    // Loop forever reading keystrokes from the serial port and writing the 
    // mapped key code to Uninput 
@@ -443,28 +448,28 @@ local void emitKey(int fd, keymap_t *key)
    // If control key required...
    if(key->control)
    {
-      LOG("Ctrl: 1 ");
+      LOG("Ctrl: Make ");
       // Control key make, report the event
       emit(fd, EV_KEY, KEY_LEFTCTRL, 1);
       emit(fd, EV_SYN, SYN_REPORT, 0);
    }
    else
-      LOG("Ctrl: 0 ");
+      LOG("Ctrl: N/A  ");
    // If shift key required...
    if(key->shift)
    {
-      LOG("Shift: 1 ");
+      LOG("Shift: Make ");
       // Shift key make, report the event
       emit(fd, EV_KEY, KEY_LEFTSHIFT, 1);
       emit(fd, EV_SYN, SYN_REPORT, 0);
    }
    else
-      LOG("Shift: 0 ");
+      LOG("Shift: N/A  ");
 
    // If make/break required...
    if(key->makebreak)
    {
-      LOG("MB: 1 Key %03d\n\r",key->key);
+      LOG("MB: 1 Key %03d ",key->key);
       // Key make, report the event
       emit(fd, EV_KEY, key->key, 1);
       emit(fd, EV_SYN, SYN_REPORT, 0);
@@ -475,7 +480,7 @@ local void emitKey(int fd, keymap_t *key)
    // Else just make or break according the MSB...
    else
    {
-      LOG("MB: 0 Key %03d\n\r",key->key);
+      LOG("MB: 0 Key %03d ",key->key);
       // Key make or break, report the event
       emit(fd, EV_KEY, key->key && 0x7f, (key->key && 0x80) >> 7);
       emit(fd, EV_SYN, SYN_REPORT, 0);
@@ -484,6 +489,7 @@ local void emitKey(int fd, keymap_t *key)
    // If control key required...
    if(key->control)
    {
+      LOG("CTRL: break");
       // Control key break, report the event
       emit(fd, EV_KEY, KEY_LEFTCTRL, 0);
       emit(fd, EV_SYN, SYN_REPORT, 0);
@@ -491,10 +497,13 @@ local void emitKey(int fd, keymap_t *key)
    // If shift key required...
    if(key->shift)
    {
+      LOG("SHIFT: break");
       // Shift key break, report the event
       emit(fd, EV_KEY, KEY_LEFTSHIFT, 0);
       emit(fd, EV_SYN, SYN_REPORT, 0);
    }
+
+   LOG("\n\r");
 }
 
 /*
@@ -525,6 +534,9 @@ local int connectUinput()
    {
       if(keymap[appConfig.keymap][i].key != KEY_RESERVED)
          ioctl(fd, UI_SET_KEYBIT, keymap[appConfig.keymap][i].key);
+
+      ioctl(fd,UI_SET_KEYBIT,KEY_LEFTSHIFT);
+      ioctl(fd,UI_SET_KEYBIT,KEY_LEFTCTRL);
    }
 
    memset(&usetup, 0, sizeof(usetup));
@@ -535,23 +547,6 @@ local int connectUinput()
 
    ioctl(fd, UI_DEV_SETUP, &usetup);
    ioctl(fd, UI_DEV_CREATE);
-
-   /*
-    * On UI_DEV_CREATE the kernel will create the device node for this
-    * device. We are inserting a pause here so that userspace has time
-    * to detect, initialize the new device, and can start listening to
-    * the event, otherwise it will not notice the event we are about
-    * to send. This pause is only needed in our example code!
-    */
-   sleep(1);
-
-      /* Key press, report the event, send key release, and report again */
-   emit(fd, EV_KEY, KEY_KPASTERISK, 1);
-   emit(fd, EV_SYN, SYN_REPORT, 0);
-   emit(fd, EV_KEY, KEY_KPASTERISK, 0);
-   emit(fd, EV_SYN, SYN_REPORT, 0);
-
-   LOG("Connected to uintput\n\r");
 
    return(fd);
 }
@@ -593,10 +588,11 @@ local int configSerial( int         fd,         // File descriptor for /dev/tty?
    cfsetispeed(&tty, speed);
 
    // Set the data bits
-   tty.c_cflag = (tty.c_cflag & ~CSIZE) | dataBits;
+   tty.c_cflag &= ~CSIZE;
+   tty.c_cflag |= dataBits;
 
    // Disable Ignore CR and CR/NL translations
-   tty.c_iflag &= ~(INLCR | IGNCR | ICRNL); // disable break processing
+   tty.c_iflag &= ~(INLCR | IGNCR | ICRNL | ISTRIP); // disable break processing
    tty.c_lflag = 0;        // no signaling chars, no echo,
                            // no canonical processing
    tty.c_oflag = 0;        // no remapping, no delays
