@@ -167,4 +167,5 @@ parseCommandLine() function to add a string name(s) for the new key map(s).
 |  4  | Ground      |
 |  5  | No Connect  |
 |  6  | Keyboard Rx |
+
 Keyboard pin out
