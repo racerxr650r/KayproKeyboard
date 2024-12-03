@@ -157,11 +157,12 @@ parseCommandLine() function to add a string name(s) for the new key map(s).
 
 # So you want to put a Raspberry Pi in your Kaypro Keyboard?
 
-The pinout for the keyboard is:
-Pin 1 - Power +5v
-Pin 2 - Tx
-Pin 3 - Ground
-Pin 4 - Ground
-Pin 5 - N/A
-Pin 6 - Rx
-
+| Pin | Description |
+|-----|-------------|
+|  1  | Power +5v   |
+|  2  | Keyboard Tx |
+|  3  | Ground      |
+|  4  | Ground      |
+|  5  | No Connect  |
+|  6  | Keyboard Rx |
+Keyboard pin out
