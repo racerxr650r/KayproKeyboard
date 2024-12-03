@@ -1,4 +1,4 @@
-# :keyboard: SerKey
+# :computer::left_right_arrow::keyboard: SerKey
 Linux serial keyboard driver that supports the Kaypro keyboard and other custom key mappings
 
 Utilizes the [uinput kernel module](https://kernel.org/doc/html/v4.12/input/uinput.html)
