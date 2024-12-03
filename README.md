@@ -44,7 +44,8 @@ make install OPTIONS="-b 300 -p none -d 8 -s 1 -k kaypro" DEVICE="/dev/ttyAMA4"
 ```
 Installs the serkey application and documentation.
 
-> :memo: **Note:** BINDIR (directory to install the binary file) and MANDIR 
+> [!NOTE]
+> BINDIR (directory to install the binary file) and MANDIR 
 (directory to install the man page documentation) can be defined from the 
 make command line. This will replace the default values. The defaults for 
 BINDIR and MANDIR should work for most Linux distributions
@@ -95,7 +96,8 @@ Install the serkey application and documentation and create a .service file to
 launch serkey as a daemon using systemd. This file will use the OPTIONS and
 DEVICE defined	in the makefile or the make command line
 
-> :memo: **Note:** OPTIONS, DEVICE, and SYSDDIR can be defined from the make
+> [!NOTE]
+> OPTIONS, DEVICE, and SYSDDIR can be defined from the make
 command line. This will replace the default values. The default for SYSDDIR
 should work for Linux distributions that use the systemd init system. This
 includes Raspberry Pi OS, Debian, Ubuntu, MX Linux, etc.
