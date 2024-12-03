@@ -154,3 +154,14 @@ The custom key map is provided to simplify customizing your own key map. If
 you choose to add an additional keymap, you will need to update the KEYMAPS
 constant to include the new keymap(s) and modify the `-k` option in the
 parseCommandLine() function to add a string name(s) for the new key map(s).
+
+# So you want to put a Raspberry Pi in your Kaypro Keyboard?
+
+The pinout for the keyboard is:
+Pin 1 - Power +5v
+Pin 2 - Tx
+Pin 3 - Ground
+Pin 4 - Ground
+Pin 5 - N/A
+Pin 6 - Rx
+
