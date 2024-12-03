@@ -160,7 +160,7 @@ parseCommandLine() function to add a string name(s) for the new key map(s).
 # So you want to put a Raspberry Pi in your Kaypro Keyboard?
 
 | Pin | Description |
-|-----|-------------|
+|:---:|:------------|
 |  1  | Power +5v   |
 |  2  | Keyboard Tx |
 |  3  | Ground      |
