@@ -1,5 +1,5 @@
 # SerKey
-Linux serial keyboard driver that supports the Kaypro keyboard and other custom key mappings
+:mage_man: Linux serial keyboard driver that supports the Kaypro keyboard and other custom key mappings
 
 Utilizes the [uinput kernel module](https://kernel.org/doc/html/v4.12/input/uinput.html)
 to implement a user mode application or daemon for the Kaypro keyboard. This has only been
