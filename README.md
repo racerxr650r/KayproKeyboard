@@ -75,7 +75,7 @@ OPTIONS:
        Set the number of data bits (default:8)
   -s   1|2
        Set the number of stop bits (default:1)
-  -k   kaypro|media_keys|ascii
+  -k   kaypro|media_keys|ascii|custom
        Select the key mapping (default:kaypro)
   -f   Fork the process to run as a background process
   -v   Verbose mode to display status information and keystroke codes
