@@ -159,6 +159,35 @@ parseCommandLine() function to add a string name(s) for the new key map(s).
 
 # So you want to put a Raspberry Pi in your Kaypro Keyboard?
 
+Kaypro sold a couple hundred thousand units back in the 80's and they have
+been sitting in attics for the past 30+ years now. So, you can find parted
+out examples pretty easily. In my case, I bought a couple broken incomplete
+keyboards on eBay over the last 5-6 years. These were originally intended to
+be spare parts for a complete system that I came across almost 10 years ago.
+So when it came time to find a case for a new Raspberry PI project, they
+were a pretty easy choice.
+
+![Kaypro Keyboard](./images/Kaypro.jpg)
+
+The Kaypro keyboard has a 5v TTL level serial connection to the base computer.
+Digging through old manual with schematics and specifications, I found that
+the interface is setup a 300 baud, no parity, 8 data bits, and 1 stop bit.
+This could easily be interfaced to a Raspberry PI
+
+![Testing Connectivity](./images/Test.jpg)
+
+While I had it apart, I measured the clearances and confirmed I could fit
+a PI 4 with a protoboard hat inside the case behind the keyboard PCB. Here's
+how I laid it out.
+
+![It fits!](./images/Layout.jpg)
+
+For my build, I used one of the four PI 4 serial ports. This required a
+5v to 3.3v level shifter. That was easily wired up on a protoboard hat.
+This connected to the keyboard PCB via the existing 6 pin connector. I
+reused the original connector from the wire harness. The pinout is in 
+the table below.
+
 | Pin | Description |
 |:---:|:------------|
 |  1  | Power +5v   |
@@ -169,3 +198,5 @@ parseCommandLine() function to add a string name(s) for the new key map(s).
 |  6  | Keyboard Rx |
 
 Keyboard pin out
+
+![Connect it up](./images/Connect.jpg)
